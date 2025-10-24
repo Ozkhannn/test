@@ -36,33 +36,35 @@ jobs:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
-          # Kanal listesi dosyadan okunuyor
           if [ ! -f channels.txt ]; then
             echo "channels.txt bulunamadı!"
             exit 1
           fi
 
-          mapfile -t CHANNELS < <(grep -v '^#' channels.txt | grep -v '^\s*$')
-
           echo "#EXTM3U" > live.m3u
 
-          for C in "${CHANNELS[@]}"; do
+          while IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY; do
+            # boş satır veya yorum satırı atla
+            [[ -z "$CHANNEL_HANDLE" || "$CHANNEL_HANDLE" =~ ^# ]] && continue
+
+            YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
+
             if [ -f cookies.txt ]; then
-              OUT=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "https://www.youtube.com/channel/$C/live" --print "%(is_live)s %(id)s %(title)s" 2>/dev/null || true)
+              OUT=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
-              OUT=$(yt-dlp --no-warnings --skip-download "https://www.youtube.com/channel/$C/live" --print "%(is_live)s %(id)s %(title)s" 2>/dev/null || true)
+              OUT=$(yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             fi
 
             if echo "$OUT" | grep -q "True"; then
               ID=$(echo "$OUT" | awk '{print $2}')
-              TITLE=$(echo "$OUT" | cut -d' ' -f3-)
-              echo "#EXTINF:-1,$TITLE" >> live.m3u
+              echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
               echo "https://www.youtube.com/watch?v=$ID" >> live.m3u
             fi
-          done
+          done < channels.txt
 
           [ -f cookies.txt ] && shred -u cookies.txt || true
 
+          # Eğer hiç canlı yoksa bilgilendir
           if [ ! -s live.m3u ]; then
             echo "#EXTM3U" > live.m3u
             echo "# No live streams found." >> live.m3u
