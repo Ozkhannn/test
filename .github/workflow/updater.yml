@@ -2,8 +2,8 @@ name: Update YouTube Live List
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # Her 15 dakikada bir otomatik çalışır
-  workflow_dispatch: {}       # Manuel olarak da çalıştırılabilir
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -12,7 +12,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -31,16 +31,18 @@ jobs:
             echo "$COOKIES_B64" | base64 -d > cookies.txt
           fi
 
-      - name: Check YouTube live channels and update Gist
+      - name: Read channels and update Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
-          # === Kanal listesi ===
-          CHANNELS=(
-            "UC4R8DWoMoI7CAwX8_LjQHig" # YouTube Spotlight
-            "UC-9-kyTW8ZkZNDHQJ6FgpwQ" # Music
-          )
+          # Kanal listesi dosyadan okunuyor
+          if [ ! -f channels.txt ]; then
+            echo "channels.txt bulunamadı!"
+            exit 1
+          fi
+
+          mapfile -t CHANNELS < <(grep -v '^#' channels.txt | grep -v '^\s*$')
 
           echo "#EXTM3U" > live.m3u
 
@@ -59,16 +61,14 @@ jobs:
             fi
           done
 
-          # Temizlik
           [ -f cookies.txt ] && shred -u cookies.txt || true
 
-          # Eğer canlı yayın yoksa bilgilendir
           if [ ! -s live.m3u ]; then
             echo "#EXTM3U" > live.m3u
             echo "# No live streams found." >> live.m3u
           fi
 
-          # === Gist güncelle ===
+          # Gist güncelle
           python3 - <<'PYCODE'
 import os, requests, json
 gist_id = os.environ["GIST_ID"]
@@ -76,10 +76,8 @@ token = os.environ["GIST_TOKEN"]
 with open("live.m3u") as f:
     content = f.read()
 data = {"files": {"live.m3u": {"content": content}}}
-r = requests.patch(
-    f"https://api.github.com/gists/{gist_id}",
-    headers={"Authorization": f"token {token}"},
-    data=json.dumps(data)
-)
+r = requests.patch(f"https://api.github.com/gists/{gist_id}",
+                   headers={"Authorization": f"token {token}"},
+                   data=json.dumps(data))
 print("✅ Gist update status:", r.status_code)
 PYCODE
