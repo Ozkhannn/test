@@ -1,0 +1,85 @@
+name: Update YouTube Live List
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # Her 15 dakikada bir otomatik çalışır
+  workflow_dispatch: {}       # Manuel olarak da çalıştırılabilir
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install --upgrade yt-dlp requests
+
+      - name: Prepare cookies (optional)
+        env:
+          COOKIES_B64: ${{ secrets.YT_COOKIES }}
+        run: |
+          if [ -n "$COOKIES_B64" ]; then
+            echo "$COOKIES_B64" | base64 -d > cookies.txt
+          fi
+
+      - name: Check YouTube live channels and update Gist
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          # === Kanal listesi ===
+          CHANNELS=(
+            "UC4R8DWoMoI7CAwX8_LjQHig" # YouTube Spotlight
+            "UC-9-kyTW8ZkZNDHQJ6FgpwQ" # Music
+          )
+
+          echo "#EXTM3U" > live.m3u
+
+          for C in "${CHANNELS[@]}"; do
+            if [ -f cookies.txt ]; then
+              OUT=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "https://www.youtube.com/channel/$C/live" --print "%(is_live)s %(id)s %(title)s" 2>/dev/null || true)
+            else
+              OUT=$(yt-dlp --no-warnings --skip-download "https://www.youtube.com/channel/$C/live" --print "%(is_live)s %(id)s %(title)s" 2>/dev/null || true)
+            fi
+
+            if echo "$OUT" | grep -q "True"; then
+              ID=$(echo "$OUT" | awk '{print $2}')
+              TITLE=$(echo "$OUT" | cut -d' ' -f3-)
+              echo "#EXTINF:-1,$TITLE" >> live.m3u
+              echo "https://www.youtube.com/watch?v=$ID" >> live.m3u
+            fi
+          done
+
+          # Temizlik
+          [ -f cookies.txt ] && shred -u cookies.txt || true
+
+          # Eğer canlı yayın yoksa bilgilendir
+          if [ ! -s live.m3u ]; then
+            echo "#EXTM3U" > live.m3u
+            echo "# No live streams found." >> live.m3u
+          fi
+
+          # === Gist güncelle ===
+          python3 - <<'PYCODE'
+import os, requests, json
+gist_id = os.environ["GIST_ID"]
+token = os.environ["GIST_TOKEN"]
+with open("live.m3u") as f:
+    content = f.read()
+data = {"files": {"live.m3u": {"content": content}}}
+r = requests.patch(
+    f"https://api.github.com/gists/{gist_id}",
+    headers={"Authorization": f"token {token}"},
+    data=json.dumps(data)
+)
+print("✅ Gist update status:", r.status_code)
+PYCODE
