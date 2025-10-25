@@ -56,12 +56,12 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            echo "⚠️ GIST_ID veya GIST_TOKEN eksik, yeni dosya oluşturulacak."
             touch live.m3u
           else
             curl -s -H "Authorization: token ${GIST_TOKEN}" \
               https://api.github.com/gists/${GIST_ID} | \
-              python3 -c "import sys, json; print(json.load(sys.stdin)['files'].get('live.m3u',{'content':''})['content'])" > live.m3u
+              python3 -c "import sys,json; data=json.load(sys.stdin); print(data['files'].get('live.m3u',{'content':''})['content'])" > live.m3u
+          fi
 
       - name: Update live.m3u channels
         run: |
@@ -98,7 +98,8 @@ jobs:
 
               [ -z "$STREAM_URL" ] && STREAM_URL="❌ Link bulunamadı"
 
-              # Mevcut extinf satırını bul ve sadece linki değiştir
+              # Güvenli güncelleme: manuel kanallar ve logo satırları korunur
+              tmpfile=$(mktemp)
               awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
                 BEGIN{updated=0}
                 /^#EXTINF:/ {
@@ -111,13 +112,9 @@ jobs:
                   }
                 }
                 {print}
-              ' live.m3u > live.tmp && mv live.tmp live.m3u
-
-              # Eğer yoksa append et
-              if ! grep -q "$DISPLAY_NAME" live.m3u; then
-                echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
-                echo "$STREAM_URL" >> live.m3u
-              fi
+                END {if(updated==0){print "#EXTINF:-1,"name" ["ENVIRON["QUALITY"]"]\n"url}}
+              ' live.m3u > "$tmpfile"
+              mv "$tmpfile" live.m3u
 
               echo "✅ $DISPLAY_NAME"
             else
