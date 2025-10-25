@@ -31,6 +31,45 @@ jobs:
           if [ -n "$COOKIES_CONTENT" ]; then
             echo "$COOKIES_CONTENT" > cookies.txt
           fi
+          if [ -f cookies.txt ]; then
+              META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "https://www.youtube.com/${CHANNEL_HANDLE}/live" --print "%(is_live)s %(id)s" 2>/dev/null || true)
+            else
+              META=$(yt-dlp --no-warnings --skip-download "https://www.youtube.com/${CHANNEL_HANDLE}/live" --print "%(is_live)s %(id)s" 2>/dev/null || true)
+            fi
+
+            if echo "$META" | grep -q "True"; then
+              VID_ID=$(echo "$META" | awk '{print $2}')
+
+              # Önce doğrudan akış URL'sini almaya çalış
+              if [ -f cookies.txt ]; then
+                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --get-url -f "best" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+              else
+                STREAM_URL=$(yt-dlp --no-warnings --skip-download --get-url -f "best" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+              fi
+
+              # Eğer boş döndüyse fallback: daha genel format dene
+              if [ -z "$STREAM_URL" ]; then
+                if [ -f cookies.txt ]; then
+                  STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --get-url -f "best[protocol^=https]/best" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                else
+                  STREAM_URL=$(yt-dlp --no-warnings --skip-download --get-url -f "best[protocol^=https]/best" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                fi
+              fi
+
+              # Eğer hala yoksa fallback olarak izleme sayfasını kullan
+              if [ -z "$STREAM_URL" ]; then
+                STREAM_URL="https://www.youtube.com/watch?v=${VID_ID}"
+              fi
+
+              # yazma kısmı (mevcut kodunla uyumlu)
+              if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
+                sed -i "/#EXTINF:-1,${DISPLAY_NAME} \[/!b;n;c\\$STREAM_URL" live.m3u
+              else
+                echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
+                echo "$STREAM_URL" >> live.m3u
+              fi
+
+              echo "FOUND: ${DISPLAY_NAME} -> $STREAM_URL"
 
       - name: Normalize channels.txt line endings
         run: |
