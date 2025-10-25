@@ -57,6 +57,7 @@ jobs:
         run: |
           set -e
 
+          # Eğer Gist boşsa başlat
           EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
@@ -70,6 +71,7 @@ jobs:
               return
             fi
 
+            # YouTube URL tespit
             if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
               YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
             elif [[ "$CHANNEL_HANDLE" == @* ]]; then
@@ -78,6 +80,7 @@ jobs:
               YT_URL="https://www.youtube.com/@${CHANNEL_HANDLE}/live"
             fi
 
+            # Canlı mı kontrol
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -89,6 +92,7 @@ jobs:
               QUALITY_NUM=${QUALITY%p}
               YTDLP_FORMAT="best[height<=${QUALITY_NUM}][protocol^=http+https][ext=m3u8]/best[protocol^=http+https]/best"
 
+              # Stream URL al
               if [ -f cookies.txt ]; then
                 STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --hls-prefer-ffmpeg -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
@@ -96,13 +100,10 @@ jobs:
               fi
 
               if [ -z "$STREAM_URL" ]; then
-                if [ -f cookies.txt ]; then
-                  STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --hls-prefer-ffmpeg -f "best[protocol^=http+https]" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-                else
-                  STREAM_URL=$(yt-dlp --no-warnings --skip-download --hls-prefer-ffmpeg -f "best[protocol^=http+https]" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-                fi
+                STREAM_URL="❌ Link bulunamadı"
               fi
 
+              # EXTINF satırını bul ve sadece linki güncelle
               if grep -q "$DISPLAY_NAME" live.m3u; then
                 awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
                   /^#EXTINF:/ {
