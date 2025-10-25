@@ -3,9 +3,10 @@ name: Update YouTube Live List
 on:
   schedule:
     - cron: "*/15 * * * *"
-    workflow_dispatch: {}
+ workflow_dispatch:
+ 
  permissions:
-  contents: read
+   contents: read
 
   jobs:
   update:
