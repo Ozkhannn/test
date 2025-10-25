@@ -1,10 +1,9 @@
-
 name: Update YouTube Live List
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
-  workflow_dispatch: {}
+    - cron: "*/15 * * * *"   # her 15 dakikada bir
+  workflow_dispatch: {}       # manuel çalıştırma
 
 permissions:
   contents: read
@@ -32,6 +31,13 @@ jobs:
             echo "$COOKIES_B64" | base64 -d > cookies.txt
           fi
 
+      - name: Normalize channels.txt line endings
+        run: |
+          if [ -f channels.txt ]; then
+            tr -d '\r' < channels.txt > channels_unix.txt
+            mv channels_unix.txt channels.txt
+          fi
+
       - name: Read channels and update Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
@@ -48,22 +54,26 @@ jobs:
             # boş satır veya yorum satırı atla
             [[ -z "$CHANNEL_HANDLE" || "$CHANNEL_HANDLE" =~ ^# ]] && continue
 
+            # Kanal başında @ yoksa ekle
+            [[ "$CHANNEL_HANDLE" != @* ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
+
             YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
 
             if [ -f cookies.txt ]; then
-              OUT=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
+              OUT=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(webpage_url)s" 2>/dev/null || true)
             else
-              OUT=$(yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
+              OUT=$(yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(webpage_url)s" 2>/dev/null || true)
             fi
 
             if echo "$OUT" | grep -q "True"; then
               ID=$(echo "$OUT" | awk '{print $2}')
               echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
-              echo "https://www.youtube.com/watch?v=$ID" >> live.m3u
+              echo "$ID" >> live.m3u
             fi
           done < channels.txt
 
-          [ -f cookies.txt ] && shred -u cookies.txt || true
+          # Cookies temizle
+          [ -f cookies.txt ] && rm -f cookies.txt || true
 
           # Eğer hiç canlı yoksa bilgilendir
           if [ ! -s live.m3u ]; then
@@ -74,13 +84,18 @@ jobs:
           # Gist güncelle
           python3 - <<'PYCODE'
 import os, requests, json
-gist_id = os.environ["GIST_ID"]
-token = os.environ["GIST_TOKEN"]
-with open("live.m3u") as f:
-    content = f.read()
-data = {"files": {"live.m3u": {"content": content}}}
-r = requests.patch(f"https://api.github.com/gists/{gist_id}",
-                   headers={"Authorization": f"token {token}"},
-                   data=json.dumps(data))
-print("✅ Gist update status:", r.status_code)
+
+gist_id = os.environ.get("GIST_ID")
+token = os.environ.get("GIST_TOKEN")
+
+if gist_id and token:
+    with open("live.m3u") as f:
+        content = f.read()
+    data = {"files": {"live.m3u": {"content": content}}}
+    r = requests.patch(f"https://api.github.com/gists/{gist_id}",
+                       headers={"Authorization": f"token {token}"},
+                       data=json.dumps(data))
+    print("✅ Gist update status:", r.status_code)
+else:
+    print("⚠️ GIST_ID veya GIST_TOKEN yok, Gist güncellenemedi.")
 PYCODE
