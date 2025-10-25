@@ -92,11 +92,11 @@ jobs:
               fi
 
               if [ -n "$STREAM_URL" ]; then
-                # sadece kanal ismine bakarak güncelle
+                # sadece kanal ismine göre güncelle, satır parametrelerini bozmadan
                 if grep -q "$DISPLAY_NAME" live.m3u; then
                   awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
                     BEGIN {found=0}
-                    /^#EXTINF:-1,/ {
+                    /^#EXTINF:/ {
                       if ($0 ~ name) {
                         print
                         getline
@@ -115,7 +115,6 @@ jobs:
               else
                 echo "❌ NOT LIVE/STREAM NOT FOUND: ${DISPLAY_NAME}"
               fi
-
             else
               echo "❌ NOT LIVE: ${DISPLAY_NAME}"
             fi
