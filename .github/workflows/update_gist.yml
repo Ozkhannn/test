@@ -73,32 +73,32 @@ jobs:
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
               QUALITY_NUM=${QUALITY%p}
-              YTDLP_FORMAT="bestvideo[height<=${QUALITY_NUM}]+bestaudio/best"
+              YTDLP_FORMAT="bestvideo[height<=${QUALITY_NUM}][protocol^=http]+bestaudio/best"
 
               if [ -f cookies.txt ]; then
-                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$YTDLP_FORMAT" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
-                STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "$YTDLP_FORMAT" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               fi
 
-              if [ -z "$STREAM_URL" ]; then
-                STREAM_URL="https://www.youtube.com/watch?v=${VID_ID}"
-              fi
-
-              if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
-                awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
-                  BEGIN {found=0}
-                  /^#EXTINF:-1,/ {
-                    if ($0 ~ name) {print; getline; print url; found=1; next}
-                  }
-                  {print}
-                ' live.m3u > live.tmp && mv live.tmp live.m3u
+              if [ -n "$STREAM_URL" ]; then
+                if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
+                  awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
+                    BEGIN {found=0}
+                    /^#EXTINF:-1,/ {
+                      if ($0 ~ name) {print; getline; print url; found=1; next}
+                    }
+                    {print}
+                  ' live.m3u > live.tmp && mv live.tmp live.m3u
+                else
+                  echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
+                  echo "$STREAM_URL" >> live.m3u
+                fi
+                echo "FOUND: ${DISPLAY_NAME} -> $STREAM_URL"
               else
-                echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
-                echo "$STREAM_URL" >> live.m3u
+                echo "NOT LIVE/STREAM NOT FOUND: ${DISPLAY_NAME}"
               fi
 
-              echo "FOUND: ${DISPLAY_NAME} -> $STREAM_URL"
             else
               echo "NOT LIVE: ${DISPLAY_NAME}"
             fi
