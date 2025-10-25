@@ -22,7 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install --upgrade yt-dlp
+        run: pip install --upgrade yt-dlp requests
 
       - name: Prepare cookies (Netscape format)
         env:
@@ -31,44 +31,6 @@ jobs:
           if [ -n "$COOKIES_CONTENT" ]; then
             echo "$COOKIES_CONTENT" > cookies.txt
           fi
-          if [ -f cookies.txt ]; then
-  META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "https://www.youtube.com/${CHANNEL_HANDLE}/live" --print "%(is_live)s %(id)s" 2>/dev/null || true)
-else
-  META=$(yt-dlp --no-warnings --skip-download "https://www.youtube.com/${CHANNEL_HANDLE}/live" --print "%(is_live)s %(id)s" 2>/dev/null || true)
-fi
-
-if echo "$META" | grep -q "True"; then
-  VID_ID=$(echo "$META" | awk '{print $2}')
-
-  # Akış URL'si almaya çalış
-  if [ -f cookies.txt ]; then
-    STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --get-url -f "best" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-  else
-    STREAM_URL=$(yt-dlp --no-warnings --skip-download --get-url -f "best" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-  fi
-
-  if [ -z "$STREAM_URL" ]; then
-    if [ -f cookies.txt ]; then
-      STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --get-url -f "best[protocol^=https]/best" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-    else
-      STREAM_URL=$(yt-dlp --no-warnings --skip-download --get-url -f "best[protocol^=https]/best" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-    fi
-  fi
-
-  if [ -z "$STREAM_URL" ]; then
-    STREAM_URL="https://www.youtube.com/watch?v=${VID_ID}"
-  fi
-
-  # live.m3u güncelle
-  if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
-    sed -i "/#EXTINF:-1,${DISPLAY_NAME} \[/!b;n;c\\$STREAM_URL" live.m3u
-  else
-    echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
-    echo "$STREAM_URL" >> live.m3u
-  fi
-
-  echo "FOUND: ${DISPLAY_NAME} -> $STREAM_URL"
-  fi
 
       - name: Normalize channels.txt line endings
         run: |
@@ -87,7 +49,6 @@ if echo "$META" | grep -q "True"; then
         run: |
           set -e
 
-          # Fetch existing live.m3u from Gist, fallback if empty
           EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
@@ -95,7 +56,6 @@ if echo "$META" | grep -q "True"; then
 
           echo "$EXISTING" > live.m3u
 
-          # Read channels.txt and process
           while IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY; do
             if [ -z "$CHANNEL_HANDLE" ] || echo "$CHANNEL_HANDLE" | grep -qE '^\s*#'; then
               continue
@@ -104,35 +64,73 @@ if echo "$META" | grep -q "True"; then
               CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
             fi
 
-            YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             if [ -f cookies.txt ]; then
-              OUT=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(webpage_url)s" 2>/dev/null || true)
+              META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "https://www.youtube.com/${CHANNEL_HANDLE}/live" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
-              OUT=$(yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(webpage_url)s" 2>/dev/null || true)
+              META=$(yt-dlp --no-warnings --skip-download "https://www.youtube.com/${CHANNEL_HANDLE}/live" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             fi
 
-            if echo "$OUT" | grep -q "True"; then
-              VID=$(echo "$OUT" | awk '{print $2}')
-              # Check if display_name exists in live.m3u
-              if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
-                # Update existing link
-                sed -i "/#EXTINF:-1,${DISPLAY_NAME} \[/!b;n;c\\$VID" live.m3u
+            if echo "$META" | grep -q "True"; then
+              VID_ID=$(echo "$META" | awk '{print $2}')
+              QUALITY_NUM=${QUALITY%p}
+              YTDLP_FORMAT="bestvideo[height<=${QUALITY_NUM}]+bestaudio/best"
+
+              if [ -f cookies.txt ]; then
+                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$YTDLP_FORMAT" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
-                # Append new channel
-                echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
-                echo "$VID" >> live.m3u
+                STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "$YTDLP_FORMAT" "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               fi
-              echo "FOUND: ${DISPLAY_NAME} -> $VID"
+
+              if [ -z "$STREAM_URL" ]; then
+                STREAM_URL="https://www.youtube.com/watch?v=${VID_ID}"
+              fi
+
+              if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
+                awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
+                  BEGIN {found=0}
+                  /^#EXTINF:-1,/ {
+                    if ($0 ~ name) {print; getline; print url; found=1; next}
+                  }
+                  {print}
+                ' live.m3u > live.tmp && mv live.tmp live.m3u
+              else
+                echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
+                echo "$STREAM_URL" >> live.m3u
+              fi
+
+              echo "FOUND: ${DISPLAY_NAME} -> $STREAM_URL"
             else
               echo "NOT LIVE: ${DISPLAY_NAME}"
             fi
+
           done < channels.txt
 
-          # Clean cookies
           [ -f cookies.txt ] && rm -f cookies.txt
 
-          # If live.m3u is empty, write notice
           if [ ! -s live.m3u ]; then
             echo "#EXTM3U" > live.m3u
             echo "# No live streams found." >> live.m3u
           fi
+
+      - name: Update Gist (via curl)
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
+            echo "GIST_ID veya GIST_TOKEN eksik, Gist güncellenemiyor."
+            exit 0
+          fi
+
+          CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('live.m3u', 'r', encoding='utf-8').read()))")
+
+          PAYLOAD="{\"files\": {\"live.m3u\": {\"content\": $CONTENT_JSON}}}"
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X PATCH \
+            -H "Authorization: token ${GIST_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}" \
+            "https://api.github.com/gists/${GIST_ID}")
+
+          echo "Gist update HTTP status: $HTTP_STATUS"
