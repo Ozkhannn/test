@@ -2,8 +2,8 @@ name: Update YouTube Live List
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # Her 5 dakikada bir çalışır
-  workflow_dispatch:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -22,9 +22,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: python3 -m pip install --upgrade yt-dlp requests
+        run: pip install --upgrade yt-dlp
 
-      - name: Prepare cookies
+      - name: Prepare cookies (Netscape format)
         env:
           COOKIES_CONTENT: ${{ secrets.YT_COOKIES }}
         run: |
@@ -32,7 +32,7 @@ jobs:
             echo "$COOKIES_CONTENT" > cookies.txt
           fi
 
-      - name: Normalize channels.txt
+      - name: Normalize channels.txt line endings
         run: |
           if [ -f channels.txt ]; then
             tr -d '\r' < channels.txt > channels_unix.txt
@@ -42,86 +42,68 @@ jobs:
             exit 1
           fi
 
-      - name: Merge/update live.m3u with existing Gist
-        env:
-          GIST_ID: ${{ secrets.GIST_ID }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      - name: Read channels and build live.m3u
         run: |
           set -e
+          echo "#EXTM3U" > live.m3u
 
-          # Fetch existing Gist
-          EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
-            "https://api.github.com/gists/$GIST_ID" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
-            || echo "#EXTM3U\n")
+          while IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY; do
+            # skip empty or comment lines
+            if [ -z "$CHANNEL_HANDLE" ] || echo "$CHANNEL_HANDLE" | grep -qE '^\s*#'; then
+              continue
+            fi
 
-          echo "$EXISTING" > live.m3u
+            # ensure handle starts with @
+            if [[ "$CHANNEL_HANDLE" != @* ]]; then
+              CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
+            fi
 
-          # Run main Python logic
-          python3 - <<'PYCODE'
- import yt_dlp
+            YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
 
- channels = []
-with open("channels.txt", "r", encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = [x.strip() for x in line.split(",", 2)]
-        if len(parts) != 3:
-            continue
-        handle, name, quality = parts
-        if not handle.startswith("@"):
-            handle = "@" + handle
-        channels.append((handle, name, quality))
+            if [ -f cookies.txt ]; then
+              OUT=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(webpage_url)s" 2>/dev/null || true)
+            else
+              OUT=$(yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(webpage_url)s" 2>/dev/null || true)
+            fi
 
-with open("live.m3u", "r", encoding="utf-8") as f:
-    lines = f.readlines()
+            if echo "$OUT" | grep -q "True"; then
+              VID=$(echo "$OUT" | awk '{print $2}')
+              echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
+              echo "$VID" >> live.m3u
+              echo "FOUND: ${DISPLAY_NAME} -> $VID"
+            else
+              echo "NOT LIVE: ${DISPLAY_NAME}"
+            fi
 
-existing_links = {}
-for i, line in enumerate(lines):
-    if line.startswith("#EXTINF:"):
-        display_name = line.split(",")[1].split(" [")[0].strip()
-        if i + 1 < len(lines):
-            existing_links[display_name] = i + 1
+          done < channels.txt
 
-for handle, display_name, quality in channels:
-    ydl_opts = {"quiet": True, "skip_download": True}
-    url = f"https://www.youtube.com/{handle}/live"
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=False)
-            if info.get("is_live"):
-                live_url = info.get("webpage_url")
-                if display_name in existing_links:
-                    lines[existing_links[display_name]] = live_url + "\n"
-                else:
-                    lines.append(f"#EXTINF:-1,{display_name} [{quality}]\n")
-                    lines.append(live_url + "\n")
-        except Exception:
-            pass
+          # clean cookies
+          if [ -f cookies.txt ]; then
+            rm -f cookies.txt
+          fi
 
-with open("live.m3u", "w", encoding="utf-8") as f:
-    f.writelines(lines)
-PYCODE
+          # if empty, write notice
+          if [ ! -s live.m3u ]; then
+            echo "#EXTM3U" > live.m3u
+            echo "# No live streams found." >> live.m3u
+          fi
 
-          # Remove cookies
-          [ -f cookies.txt ] && rm -f cookies.txt
-
-      - name: Update Gist
+      - name: Update Gist (via curl)
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            echo "GIST_ID veya GIST_TOKEN eksik."
+            echo "GIST_ID veya GIST_TOKEN eksik, Gist güncellenemiyor."
             exit 0
           fi
 
-          CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('live.m3u','r',encoding='utf-8').read()))")
+          # Escape live.m3u content to a JSON string safely using python
+          CONTENT_JSON=$(python3 -c "import json,sys; print(json.dumps(open('live.m3u', 'r', encoding='utf-8').read()))")
 
-          PAYLOAD="{\"files\":{\"live.m3u\":{\"content\":$CONTENT_JSON}}}"
+          PAYLOAD="{\"files\": {\"live.m3u\": {\"content\": $CONTENT_JSON}}}"
 
+          # Patch the gist
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -X PATCH \
             -H "Authorization: token ${GIST_TOKEN}" \
