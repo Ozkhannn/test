@@ -1,5 +1,4 @@
 @Haberturktv,Haber Turk,480p
-@tvnet,Tv Net Youtube,480p
 @cnnturk,Cnn Turk,720p
 @DiyanetCocuk,Diyanet Cocuk YT,480p
 @zenginkizfakiroglantrt,Zengin Kız Fakir Oğlan,480p
