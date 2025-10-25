@@ -60,7 +60,6 @@ jobs:
           python3 - <<'PYCODE'
 import yt_dlp
 
-# Read channels.txt
 channels = []
 with open("channels.txt", "r", encoding="utf-8") as f:
     for line in f:
@@ -75,11 +74,9 @@ with open("channels.txt", "r", encoding="utf-8") as f:
             handle = "@" + handle
         channels.append((handle, name, quality))
 
-# Read existing live.m3u
 with open("live.m3u", "r", encoding="utf-8") as f:
     lines = f.readlines()
 
-# Map existing links by display_name
 existing_links = {}
 for i, line in enumerate(lines):
     if line.startswith("#EXTINF:"):
@@ -87,7 +84,6 @@ for i, line in enumerate(lines):
         if i + 1 < len(lines):
             existing_links[display_name] = i + 1
 
-# Process channels
 for handle, display_name, quality in channels:
     ydl_opts = {"quiet": True, "skip_download": True}
     url = f"https://www.youtube.com/{handle}/live"
@@ -97,21 +93,17 @@ for handle, display_name, quality in channels:
             if info.get("is_live"):
                 live_url = info.get("webpage_url")
                 if display_name in existing_links:
-                    # Update only the link
                     lines[existing_links[display_name]] = live_url + "\n"
                 else:
-                    # Append new channel
                     lines.append(f"#EXTINF:-1,{display_name} [{quality}]\n")
                     lines.append(live_url + "\n")
         except Exception:
             pass
 
-# Write updated live.m3u
 with open("live.m3u", "w", encoding="utf-8") as f:
     f.writelines(lines)
 PYCODE
 
-          # Remove cookies
           [ -f cookies.txt ] && rm -f cookies.txt
 
       - name: Update Gist
