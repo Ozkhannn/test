@@ -87,8 +87,8 @@ jobs:
           import requests
           import json
 
-gist_id = os.environ.get("GIST_ID")
-token = os.environ.get("GIST_TOKEN")
+         gist_id = os.environ.get("GIST_ID")
+         token = os.environ.get("GIST_TOKEN")
 
 if gist_id and token:
     with open("live.m3u") as f:
