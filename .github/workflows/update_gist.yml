@@ -2,7 +2,7 @@ name: Update YouTube Live List
 
 on:
   schedule:
-    - cron: "*/700 * * * *"   # Her 5 dakikada bir çalışır
+    - cron: "*/5 * * * *"   # Her 5 dakikada bir çalışır
   workflow_dispatch:
 
 permissions:
