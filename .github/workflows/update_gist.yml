@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Python (for JSON)
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -50,26 +50,36 @@ jobs:
             exit 1
           fi
 
-      - name: Build/Update live.m3u
+      - name: Fetch existing live.m3u from Gist
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
+            echo "⚠️ GIST_ID veya GIST_TOKEN eksik, yeni dosya oluşturulacak."
+            touch live.m3u
+          else
+            curl -s -H "Authorization: token ${GIST_TOKEN}" \
+              https://api.github.com/gists/${GIST_ID} | \
+              python3 -c "import sys, json; print(json.load(sys.stdin)['files'].get('live.m3u',{'content':''})['content'])" > live.m3u
+          fi
+
+      - name: Update live.m3u channels
         run: |
           set -e
-          touch live.m3u
           
-          # Kanal linklerini paralel güncelle
           update_channel() {
             LINE="$1"
             IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY <<< "$LINE"
             [ -z "$CHANNEL_HANDLE" ] && return
             [[ "$CHANNEL_HANDLE" != @* && ! "$CHANNEL_HANDLE" =~ ^UC ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
 
-            # YouTube URL
             if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
               YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
             else
               YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             fi
 
-            # Canlı kontrolü ve video ID
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -78,7 +88,6 @@ jobs:
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
-              # Kalite kontrolü
               Q_NUM=${QUALITY%p}
               FORMAT="bestvideo[height<=${Q_NUM}]+bestaudio/best[height<=${Q_NUM}]/best"
 
@@ -90,7 +99,6 @@ jobs:
 
               [ -z "$STREAM_URL" ] && STREAM_URL="❌ Link bulunamadı"
 
-              # EXTINF satırını bul ve sadece linki güncelle (logo/parametre korunur)
               awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
                 BEGIN{updated=0}
                 /^#EXTINF:/ {
@@ -105,7 +113,6 @@ jobs:
                 {print}
               ' live.m3u > live.tmp && mv live.tmp live.m3u
 
-              # Eğer EXTINF yoksa append et
               if ! grep -q "$DISPLAY_NAME" live.m3u; then
                 echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
                 echo "$STREAM_URL" >> live.m3u
@@ -122,7 +129,6 @@ jobs:
 
           [ -f cookies.txt ] && rm -f cookies.txt
 
-          # Boşsa uyarı
           if [ ! -s live.m3u ]; then
             echo "#EXTM3U" > live.m3u
             echo "❌ No live streams found." >> live.m3u
