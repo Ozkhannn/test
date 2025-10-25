@@ -91,38 +91,43 @@ jobs:
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
               QUALITY_NUM=${QUALITY%p}
-              YTDLP_FORMAT="bestvideo[height<=${QUALITY_NUM}][protocol^=http]+bestaudio/best"
+              YTDLP_FORMAT="best[height<=${QUALITY_NUM}][protocol^=http]/best[protocol^=http]"
 
+              # Öncelikli olarak istenilen kaliteyi al
               if [ -f cookies.txt ]; then
                 STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
                 STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               fi
 
-              if [ -n "$STREAM_URL" ]; then
-                # sadece kanal ismine göre güncelle, satır parametrelerini bozmadan
-                if grep -q "$DISPLAY_NAME" live.m3u; then
-                  awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
-                    BEGIN {found=0}
-                    /^#EXTINF:/ {
-                      if ($0 ~ name) {
-                        print
-                        getline
-                        print url
-                        found=1
-                        next
-                      }
-                    }
-                    {print}
-                  ' live.m3u > live.tmp && mv live.tmp live.m3u
+              # Eğer yoksa fallback: best
+              if [ -z "$STREAM_URL" ]; then
+                if [ -f cookies.txt ]; then
+                  STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "best[protocol^=http]" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
                 else
-                  echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
-                  echo "$STREAM_URL" >> live.m3u
+                  STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "best[protocol^=http]" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
                 fi
-                echo "✅ FOUND: ${DISPLAY_NAME}"
-              else
-                echo "❌ NOT LIVE/STREAM NOT FOUND: ${DISPLAY_NAME}"
               fi
+
+              # Mevcut logo/parametreleri koruyarak güncelle
+              if grep -q "$DISPLAY_NAME" live.m3u; then
+                awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
+                  /^#EXTINF:/ {
+                    if ($0 ~ name) {
+                      print
+                      getline
+                      print url
+                      next
+                    }
+                  }
+                  {print}
+                ' live.m3u > live.tmp && mv live.tmp live.m3u
+              else
+                echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
+                echo "$STREAM_URL" >> live.m3u
+              fi
+
+              echo "✅ FOUND: ${DISPLAY_NAME}"
             else
               echo "❌ NOT LIVE: ${DISPLAY_NAME}"
             fi
