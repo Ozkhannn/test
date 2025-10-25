@@ -2,7 +2,7 @@ name: Update YouTube Live List
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"   # Her 5 dakikada bir çalışır
   workflow_dispatch:
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install --upgrade yt-dlp requests
+        run: python3 -m pip install --upgrade yt-dlp requests
 
       - name: Prepare cookies
         env:
@@ -42,41 +42,6 @@ jobs:
             exit 1
           fi
 
-      - name: Write Python update script
-        run: |
-          echo 'import yt_dlp' > update_live.py
-          echo 'channels = []' >> update_live.py
-          echo 'with open("channels.txt","r",encoding="utf-8") as f:' >> update_live.py
-          echo '    for line in f:' >> update_live.py
-          echo '        line=line.strip()' >> update_live.py
-          echo '        if not line or line.startswith("#"): continue' >> update_live.py
-          echo '        parts=[x.strip() for x in line.split(",",2)]' >> update_live.py
-          echo '        if len(parts)!=3: continue' >> update_live.py
-          echo '        handle,name,quality=parts' >> update_live.py
-          echo '        if not handle.startswith("@"): handle="@"+handle' >> update_live.py
-          echo '        channels.append((handle,name,quality))' >> update_live.py
-          echo 'lines=open("live.m3u","r",encoding="utf-8").readlines()' >> update_live.py
-          echo 'existing_links={}' >> update_live.py
-          echo 'for i,line in enumerate(lines):' >> update_live.py
-          echo '    if line.startswith("#EXTINF:"):' >> update_live.py
-          echo '        display_name=line.split(",")[1].split(" [")[0].strip()' >> update_live.py
-          echo '        if i+1<len(lines): existing_links[display_name]=i+1' >> update_live.py
-          echo 'for handle,display_name,quality in channels:' >> update_live.py
-          echo '    ydl_opts={"quiet":True,"skip_download":True}' >> update_live.py
-          echo '    url=f"https://www.youtube.com/{handle}/live"' >> update_live.py
-          echo '    with yt_dlp.YoutubeDL(ydl_opts) as ydl:' >> update_live.py
-          echo '        try:' >> update_live.py
-          echo '            info=ydl.extract_info(url,download=False)' >> update_live.py
-          echo '            if info.get("is_live"):' >> update_live.py
-          echo '                live_url=info.get("webpage_url")' >> update_live.py
-          echo '                if display_name in existing_links:' >> update_live.py
-          echo '                    lines[existing_links[display_name]]=live_url+"\\n"' >> update_live.py
-          echo '                else:' >> update_live.py
-          echo '                    lines.append(f"#EXTINF:-1,{display_name} [{quality}]\\n")' >> update_live.py
-          echo '                    lines.append(live_url+"\\n")' >> update_live.py
-          echo '        except Exception: pass' >> update_live.py
-          echo 'open("live.m3u","w",encoding="utf-8").writelines(lines)' >> update_live.py
-
       - name: Merge/update live.m3u with existing Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
@@ -84,6 +49,7 @@ jobs:
         run: |
           set -e
 
+          # Fetch existing Gist
           EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
@@ -91,8 +57,55 @@ jobs:
 
           echo "$EXISTING" > live.m3u
 
-          python3 update_live.py
+          # Run main Python logic
+          python3 - <<'PYCODE'
+import yt_dlp
 
+channels = []
+with open("channels.txt", "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [x.strip() for x in line.split(",", 2)]
+        if len(parts) != 3:
+            continue
+        handle, name, quality = parts
+        if not handle.startswith("@"):
+            handle = "@" + handle
+        channels.append((handle, name, quality))
+
+with open("live.m3u", "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+existing_links = {}
+for i, line in enumerate(lines):
+    if line.startswith("#EXTINF:"):
+        display_name = line.split(",")[1].split(" [")[0].strip()
+        if i + 1 < len(lines):
+            existing_links[display_name] = i + 1
+
+for handle, display_name, quality in channels:
+    ydl_opts = {"quiet": True, "skip_download": True}
+    url = f"https://www.youtube.com/{handle}/live"
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            info = ydl.extract_info(url, download=False)
+            if info.get("is_live"):
+                live_url = info.get("webpage_url")
+                if display_name in existing_links:
+                    lines[existing_links[display_name]] = live_url + "\n"
+                else:
+                    lines.append(f"#EXTINF:-1,{display_name} [{quality}]\n")
+                    lines.append(live_url + "\n")
+        except Exception:
+            pass
+
+with open("live.m3u", "w", encoding="utf-8") as f:
+    f.writelines(lines)
+PYCODE
+
+          # Remove cookies
           [ -f cookies.txt ] && rm -f cookies.txt
 
       - name: Update Gist
