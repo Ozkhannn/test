@@ -57,7 +57,6 @@ jobs:
         run: |
           set -e
 
-          # mevcut live.m3u içeriğini al
           EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
@@ -67,12 +66,10 @@ jobs:
           process_channel() {
             CHANNEL_LINE="$1"
             IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY <<< "$CHANNEL_LINE"
-
             if [ -z "$CHANNEL_HANDLE" ] || echo "$CHANNEL_HANDLE" | grep -qE '^\s*#'; then
               return
             fi
 
-            # Kanal türünü otomatik algıla
             if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
               YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
             elif [[ "$CHANNEL_HANDLE" == @* ]]; then
@@ -81,7 +78,6 @@ jobs:
               YT_URL="https://www.youtube.com/@${CHANNEL_HANDLE}/live"
             fi
 
-            # Canlı meta
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -91,25 +87,22 @@ jobs:
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
               QUALITY_NUM=${QUALITY%p}
-              YTDLP_FORMAT="best[height<=${QUALITY_NUM}][protocol^=http]/best[protocol^=http]"
+              YTDLP_FORMAT="best[height<=${QUALITY_NUM}][protocol^=http+https][ext=m3u8]/best[protocol^=http+https]/best"
 
-              # Öncelikli olarak istenilen kaliteyi al
               if [ -f cookies.txt ]; then
-                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --hls-prefer-ffmpeg -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
-                STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                STREAM_URL=$(yt-dlp --no-warnings --skip-download --hls-prefer-ffmpeg -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               fi
 
-              # Eğer yoksa fallback: best
               if [ -z "$STREAM_URL" ]; then
                 if [ -f cookies.txt ]; then
-                  STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "best[protocol^=http]" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                  STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --hls-prefer-ffmpeg -f "best[protocol^=http+https]" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
                 else
-                  STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "best[protocol^=http]" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                  STREAM_URL=$(yt-dlp --no-warnings --skip-download --hls-prefer-ffmpeg -f "best[protocol^=http+https]" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
                 fi
               fi
 
-              # Mevcut logo/parametreleri koruyarak güncelle
               if grep -q "$DISPLAY_NAME" live.m3u; then
                 awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
                   /^#EXTINF:/ {
