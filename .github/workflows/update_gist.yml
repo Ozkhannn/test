@@ -56,6 +56,8 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           set -e
+
+          # mevcut live.m3u içeriğini al
           EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
@@ -90,12 +92,18 @@ jobs:
               fi
 
               if [ -n "$STREAM_URL" ]; then
-                # Dosya güncellemesi
-                if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
+                # sadece kanal ismine bakarak güncelle
+                if grep -q "$DISPLAY_NAME" live.m3u; then
                   awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
                     BEGIN {found=0}
                     /^#EXTINF:-1,/ {
-                      if ($0 ~ name) {print; getline; print url; found=1; next}
+                      if ($0 ~ name) {
+                        print
+                        getline
+                        print url
+                        found=1
+                        next
+                      }
                     }
                     {print}
                   ' live.m3u > live.tmp && mv live.tmp live.m3u
@@ -107,6 +115,7 @@ jobs:
               else
                 echo "❌ NOT LIVE/STREAM NOT FOUND: ${DISPLAY_NAME}"
               fi
+
             else
               echo "❌ NOT LIVE: ${DISPLAY_NAME}"
             fi
