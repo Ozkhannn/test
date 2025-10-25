@@ -21,6 +21,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: pip install --upgrade yt-dlp requests
 
@@ -38,7 +46,7 @@ jobs:
             tr -d '\r' < channels.txt > channels_unix.txt
             mv channels_unix.txt channels.txt
           else
-            echo "channels.txt bulunamadı!"
+            echo "⚠️ channels.txt bulunamadı!"
             exit 1
           fi
 
@@ -94,13 +102,13 @@ jobs:
                   echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
                   echo "$STREAM_URL" >> live.m3u
                 fi
-                echo "FOUND: ${DISPLAY_NAME} -> $STREAM_URL"
+                echo "✅ FOUND: ${DISPLAY_NAME} -> $STREAM_URL"
               else
-                echo "NOT LIVE/STREAM NOT FOUND: ${DISPLAY_NAME}"
+                echo "❌ NOT LIVE/STREAM NOT FOUND: ${DISPLAY_NAME}"
               fi
 
             else
-              echo "NOT LIVE: ${DISPLAY_NAME}"
+              echo "❌ NOT LIVE: ${DISPLAY_NAME}"
             fi
 
           done < channels.txt
@@ -109,7 +117,7 @@ jobs:
 
           if [ ! -s live.m3u ]; then
             echo "#EXTM3U" > live.m3u
-            echo "# No live streams found." >> live.m3u
+            echo "❌ No live streams found." >> live.m3u
           fi
 
       - name: Update Gist (via curl)
@@ -118,7 +126,7 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            echo "GIST_ID veya GIST_TOKEN eksik, Gist güncellenemiyor."
+            echo "⚠️ GIST_ID veya GIST_TOKEN eksik, Gist güncellenemiyor."
             exit 0
           fi
 
@@ -133,4 +141,4 @@ jobs:
             -d "${PAYLOAD}" \
             "https://api.github.com/gists/${GIST_ID}")
 
-          echo "Gist update HTTP status: $HTTP_STATUS"
+          echo "✅ Gist update HTTP status: $HTTP_STATUS"
