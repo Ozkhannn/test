@@ -1,5 +1,4 @@
 @Haberturktv,Haber Turk,480p
-@tv100,Tv 100,480
 @tvnet,Tv Net Youtube,480p
 @cnnturk,Cnn Turk,720p
 @DiyanetCocuk,Diyanet Cocuk YT,480p
