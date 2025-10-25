@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: pip install --upgrade yt-dlp requests
 
-      - name: Prepare cookies (Netscape format)
+      - name: Prepare cookies
         env:
           COOKIES_CONTENT: ${{ secrets.YT_COOKIES }}
         run: |
@@ -32,7 +32,7 @@ jobs:
             echo "$COOKIES_CONTENT" > cookies.txt
           fi
 
-      - name: Normalize channels.txt line endings
+      - name: Normalize channels.txt
         run: |
           if [ -f channels.txt ]; then
             tr -d '\r' < channels.txt > channels_unix.txt
@@ -42,15 +42,18 @@ jobs:
             exit 1
           fi
 
-      - name: Update live.m3u (merge with existing Gist)
+      - name: Merge/update live.m3u with existing Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           set -e
 
-          # Fetch current Gist content
-          EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" "https://api.github.com/gists/$GIST_ID" | python3 -c "import sys, json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" || echo "#EXTM3U\n")
+          # Fetch existing Gist
+          EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
+            "https://api.github.com/gists/$GIST_ID" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
+            || echo "#EXTM3U\n")
 
           echo "$EXISTING" > live.m3u
 
@@ -58,14 +61,17 @@ jobs:
 import os
 import yt_dlp
 
-# Read channels.txt
+# Read channels
 channels = []
 with open("channels.txt", "r", encoding="utf-8") as f:
     for line in f:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        handle, name, quality = [x.strip() for x in line.split(",", 2)]
+        parts = [x.strip() for x in line.split(",", 2)]
+        if len(parts) != 3:
+            continue
+        handle, name, quality = parts
         if not handle.startswith("@"):
             handle = "@" + handle
         channels.append((handle, name, quality))
@@ -74,14 +80,13 @@ with open("channels.txt", "r", encoding="utf-8") as f:
 with open("live.m3u", "r", encoding="utf-8") as f:
     lines = f.readlines()
 
-# Build a dict: {display_name: line_index_of_link}
+# Map existing links by display_name
 existing_links = {}
 for i, line in enumerate(lines):
     if line.startswith("#EXTINF:"):
-        # extract name from EXTINF line
-        name_part = line.split(",")[1].split(" [")[0].strip()
+        display_name = line.split(",")[1].split(" [")[0].strip()
         if i + 1 < len(lines):
-            existing_links[name_part] = i + 1  # next line is link
+            existing_links[display_name] = i + 1
 
 # Process channels
 for handle, display_name, quality in channels:
@@ -93,27 +98,30 @@ for handle, display_name, quality in channels:
             if info.get("is_live"):
                 live_url = info.get("webpage_url")
                 if display_name in existing_links:
-                    # update link only
+                    # Update only the link
                     lines[existing_links[display_name]] = live_url + "\n"
                 else:
-                    # append new channel
+                    # Append new channel
                     lines.append(f"#EXTINF:-1,{display_name} [{quality}]\n")
                     lines.append(live_url + "\n")
-        except Exception as e:
-            pass  # not live or error, ignore
+        except Exception:
+            pass
 
-# Write back
+# Write updated live.m3u
 with open("live.m3u", "w", encoding="utf-8") as f:
     f.writelines(lines)
 PYCODE
 
-      - name: Update Gist (via curl)
+          # Remove cookies
+          [ -f cookies.txt ] && rm -f cookies.txt
+
+      - name: Update Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            echo "GIST_ID veya GIST_TOKEN eksik, Gist güncellenemiyor."
+            echo "GIST_ID veya GIST_TOKEN eksik."
             exit 0
           fi
 
