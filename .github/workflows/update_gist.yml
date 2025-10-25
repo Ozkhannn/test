@@ -29,16 +29,13 @@ jobs:
           COOKIES_CONTENT: ${{ secrets.YT_COOKIES }}
         run: |
           if [ -n "$COOKIES_CONTENT" ]; then
-            # Geçici dosya oluştur
             echo "$COOKIES_CONTENT" > cookies.txt
-          fi
 
       - name: Normalize channels.txt line endings
         run: |
           if [ -f channels.txt ]; then
             tr -d '\r' < channels.txt > channels_unix.txt
             mv channels_unix.txt channels.txt
-          fi
 
       - name: Read channels and update Gist
         env:
@@ -73,7 +70,6 @@ jobs:
             fi
           done < channels.txt
 
-          # Cookies güvenli şekilde sil
           [ -f cookies.txt ] && rm -f cookies.txt || true
 
           if [ ! -s live.m3u ]; then
@@ -83,12 +79,12 @@ jobs:
 
           # Python Gist update
           python3 - <<'PYCODE'
-          import os
-          import requests
-          import json
+import os
+import requests
+import json
 
-         gist_id = os.environ.get("GIST_ID")
-         token = os.environ.get("GIST_TOKEN")
+gist_id = os.environ.get("GIST_ID")
+token = os.environ.get("GIST_TOKEN")
 
 if gist_id and token:
     with open("live.m3u") as f:
