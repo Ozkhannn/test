@@ -81,10 +81,11 @@ jobs:
             echo "# No live streams found." >> live.m3u
           fi
 
-  python3 - <<'PYCODE'
-  import os
-  import requests
-  import json
+          # Python Gist update
+          python3 - <<'PYCODE'
+          import os
+          import requests
+          import json
 
 gist_id = os.environ.get("GIST_ID")
 token = os.environ.get("GIST_TOKEN")
