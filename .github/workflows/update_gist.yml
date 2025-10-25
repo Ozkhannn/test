@@ -50,27 +50,27 @@ jobs:
             exit 1
           fi
 
-      - name: Read channels and build/update live.m3u
+      - name: Build/Update live.m3u (parallel workers)
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           set -e
-
           EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
             || echo "#EXTM3U\n")
-
           echo "$EXISTING" > live.m3u
 
-          while IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY; do
+          process_channel() {
+            CHANNEL_LINE="$1"
+            IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY <<< "$CHANNEL_LINE"
+
             if [ -z "$CHANNEL_HANDLE" ] || echo "$CHANNEL_HANDLE" | grep -qE '^\s*#'; then
-              continue
+              return
             fi
-            if [[ "$CHANNEL_HANDLE" != @* ]]; then
-              CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
-            fi
+
+            [[ "$CHANNEL_HANDLE" != @* ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
 
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "https://www.youtube.com/${CHANNEL_HANDLE}/live" --print "%(is_live)s %(id)s" 2>/dev/null || true)
@@ -90,6 +90,7 @@ jobs:
               fi
 
               if [ -n "$STREAM_URL" ]; then
+                # Dosya güncellemesi
                 if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
                   awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
                     BEGIN {found=0}
@@ -102,17 +103,19 @@ jobs:
                   echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
                   echo "$STREAM_URL" >> live.m3u
                 fi
-                # Logta sadece isim
                 echo "✅ FOUND: ${DISPLAY_NAME}"
               else
                 echo "❌ NOT LIVE/STREAM NOT FOUND: ${DISPLAY_NAME}"
               fi
-
             else
               echo "❌ NOT LIVE: ${DISPLAY_NAME}"
             fi
+          }
 
-          done < channels.txt
+          export -f process_channel
+          export GIST_ID GIST_TOKEN
+          # Paralel çalıştır: 5 worker
+          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P5 -I {} bash -c 'process_channel "$@"' _ {}
 
           [ -f cookies.txt ] && rm -f cookies.txt
 
