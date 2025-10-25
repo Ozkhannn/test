@@ -61,7 +61,7 @@ jobs:
           python3 - <<'PYCODE'
  import yt_dlp
 
-channels = []
+ channels = []
 with open("channels.txt", "r", encoding="utf-8") as f:
     for line in f:
         line = line.strip()
