@@ -1,4 +1,4 @@
-@tv100,Tv 100,480p
+@tv100,Tv 100,360
 @tvnet,Tv Net Youtube,480p
 @cnnturk,Cnn Turk,720p
 @DiyanetCocuk,Diyanet Cocuk YT,480p
