@@ -54,21 +54,22 @@ jobs:
         run: |
           set -e
           touch live.m3u
-
+          
+          # Kanal linklerini paralel güncelle
           update_channel() {
             LINE="$1"
             IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY <<< "$LINE"
             [ -z "$CHANNEL_HANDLE" ] && return
             [[ "$CHANNEL_HANDLE" != @* && ! "$CHANNEL_HANDLE" =~ ^UC ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
 
-            # Canlı URL
+            # YouTube URL
             if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
               YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
             else
               YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             fi
 
-            # Canlı kontrolü ve video ID al
+            # Canlı kontrolü ve video ID
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -89,20 +90,23 @@ jobs:
 
               [ -z "$STREAM_URL" ] && STREAM_URL="❌ Link bulunamadı"
 
-              # EXTINF satırını bul ve linki güncelle
-              if grep -q "$DISPLAY_NAME" live.m3u; then
-                awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
-                  /^#EXTINF:/ {
-                    if ($0 ~ name) {
-                      print
-                      getline
-                      print url
-                      next
-                    }
+              # EXTINF satırını bul ve sadece linki güncelle (logo/parametre korunur)
+              awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
+                BEGIN{updated=0}
+                /^#EXTINF:/ {
+                  if ($0 ~ name && updated==0) {
+                    print
+                    getline
+                    print url
+                    updated=1
+                    next
                   }
-                  {print}
-                ' live.m3u > live.tmp && mv live.tmp live.m3u
-              else
+                }
+                {print}
+              ' live.m3u > live.tmp && mv live.tmp live.m3u
+
+              # Eğer EXTINF yoksa append et
+              if ! grep -q "$DISPLAY_NAME" live.m3u; then
                 echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
                 echo "$STREAM_URL" >> live.m3u
               fi
@@ -118,6 +122,7 @@ jobs:
 
           [ -f cookies.txt ] && rm -f cookies.txt
 
+          # Boşsa uyarı
           if [ ! -s live.m3u ]; then
             echo "#EXTM3U" > live.m3u
             echo "❌ No live streams found." >> live.m3u
