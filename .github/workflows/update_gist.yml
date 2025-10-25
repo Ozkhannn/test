@@ -42,23 +42,12 @@ jobs:
             exit 1
           fi
 
-      - name: Merge/update live.m3u with existing Gist
-        env:
-          GIST_ID: ${{ secrets.GIST_ID }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      - name: Create update script
         run: |
-          set -e
-
-          # Fetch existing Gist
-          EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
-            "https://api.github.com/gists/$GIST_ID" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
-            || echo "#EXTM3U\n")
-
-          echo "$EXISTING" > live.m3u
-
-          python3 - <<'PYCODE'
+          cat > update_live.py <<'PYCODE'
 import yt_dlp
+import json
+import sys
 
 channels = []
 with open("channels.txt", "r", encoding="utf-8") as f:
@@ -103,6 +92,22 @@ for handle, display_name, quality in channels:
 with open("live.m3u", "w", encoding="utf-8") as f:
     f.writelines(lines)
 PYCODE
+
+      - name: Merge/update live.m3u with existing Gist
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          set -e
+
+          EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
+            "https://api.github.com/gists/$GIST_ID" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
+            || echo "#EXTM3U\n")
+
+          echo "$EXISTING" > live.m3u
+
+          python3 update_live.py
 
           [ -f cookies.txt ] && rm -f cookies.txt
 
