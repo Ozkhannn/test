@@ -81,8 +81,7 @@ jobs:
             echo "# No live streams found." >> live.m3u
           fi
 
-          # Python Gist update
-          python3 - <<'PYCODE'
+python3 - <<'PYCODE'
 import os
 import requests
 import json
