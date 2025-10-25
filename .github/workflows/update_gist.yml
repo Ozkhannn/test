@@ -30,6 +30,7 @@ jobs:
         run: |
           if [ -n "$COOKIES_CONTENT" ]; then
             echo "$COOKIES_CONTENT" > cookies.txt
+          fi
 
       - name: Normalize channels.txt line endings
         run: |
