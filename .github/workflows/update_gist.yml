@@ -57,11 +57,11 @@ jobs:
         run: |
           set -e
 
-          # Eğer Gist boşsa başlat
+          # Gist'ten mevcut dosyayı çek
           EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
             "https://api.github.com/gists/$GIST_ID" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
-            || echo "#EXTM3U\n")
+            | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['files']['live.m3u']['content'] if 'live.m3u' in data['files'] else '#EXTM3U\n')"
+          )
           echo "$EXISTING" > live.m3u
 
           process_channel() {
@@ -71,7 +71,7 @@ jobs:
               return
             fi
 
-            # YouTube URL tespit
+            # URL tespiti
             if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
               YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
             elif [[ "$CHANNEL_HANDLE" == @* ]]; then
@@ -92,7 +92,7 @@ jobs:
               QUALITY_NUM=${QUALITY%p}
               YTDLP_FORMAT="best[height<=${QUALITY_NUM}][protocol^=http+https][ext=m3u8]/best[protocol^=http+https]/best"
 
-              # Stream URL al
+              # HLS/M3U8 linki al
               if [ -f cookies.txt ]; then
                 STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --hls-prefer-ffmpeg -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
@@ -103,7 +103,7 @@ jobs:
                 STREAM_URL="❌ Link bulunamadı"
               fi
 
-              # EXTINF satırını bul ve sadece linki güncelle
+              # EXTINF satırını bul ve linki güncelle
               if grep -q "$DISPLAY_NAME" live.m3u; then
                 awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
                   /^#EXTINF:/ {
