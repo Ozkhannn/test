@@ -29,7 +29,7 @@ jobs:
           COOKIES_CONTENT: ${{ secrets.YT_COOKIES }}
         run: |
           if [ -n "$COOKIES_CONTENT" ]; then
-            echo "$COOKIES_CONTENT" > cookies.txt
+            echo "$COOKES_CONTENT" > cookies.txt
           fi
 
       - name: Normalize channels.txt line endings
@@ -37,6 +37,7 @@ jobs:
           if [ -f channels.txt ]; then
             tr -d '\r' < channels.txt > channels_unix.txt
             mv channels_unix.txt channels.txt
+          fi
 
       - name: Read channels and update Gist
         env:
@@ -71,8 +72,10 @@ jobs:
             fi
           done < channels.txt
 
+          # Cookies güvenli şekilde sil
           [ -f cookies.txt ] && rm -f cookies.txt || true
 
+          # Eğer hiç canlı yoksa bilgilendir
           if [ ! -s live.m3u ]; then
             echo "#EXTM3U" > live.m3u
             echo "# No live streams found." >> live.m3u
