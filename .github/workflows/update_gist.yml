@@ -16,12 +16,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python (for JSON processing)
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Cache pip packages
+      - name: Cache pip
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: pip install --upgrade yt-dlp requests
 
-      - name: Prepare cookies (Netscape format)
+      - name: Prepare cookies
         env:
           COOKIES_CONTENT: ${{ secrets.YT_COOKIES }}
         run: |
@@ -40,7 +40,7 @@ jobs:
             echo "$COOKIES_CONTENT" > cookies.txt
           fi
 
-      - name: Normalize channels.txt line endings
+      - name: Normalize channels.txt
         run: |
           if [ -f channels.txt ]; then
             tr -d '\r' < channels.txt > channels_unix.txt
@@ -50,37 +50,25 @@ jobs:
             exit 1
           fi
 
-      - name: Build/Update live.m3u (parallel workers)
-        env:
-          GIST_ID: ${{ secrets.GIST_ID }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      - name: Build/Update live.m3u
         run: |
           set -e
+          touch live.m3u
+          # Fonksiyon kanal güncellemesi
+          update_channel() {
+            LINE="$1"
+            IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY <<< "$LINE"
+            [ -z "$CHANNEL_HANDLE" ] && return
+            [[ "$CHANNEL_HANDLE" != @* ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
 
-          # Gist'ten mevcut dosyayı çek
-          EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
-            "https://api.github.com/gists/$GIST_ID" \
-            | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['files']['live.m3u']['content'] if 'live.m3u' in data['files'] else '#EXTM3U\n')"
-          )
-          echo "$EXISTING" > live.m3u
-
-          process_channel() {
-            CHANNEL_LINE="$1"
-            IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY <<< "$CHANNEL_LINE"
-            if [ -z "$CHANNEL_HANDLE" ] || echo "$CHANNEL_HANDLE" | grep -qE '^\s*#'; then
-              return
-            fi
-
-            # URL tespiti
+            # YouTube live URL
             if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
               YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
-            elif [[ "$CHANNEL_HANDLE" == @* ]]; then
-              YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             else
-              YT_URL="https://www.youtube.com/@${CHANNEL_HANDLE}/live"
+              YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             fi
 
-            # Canlı mı kontrol
+            # Canlı kontrolü ve ID al
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -89,19 +77,17 @@ jobs:
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
-              QUALITY_NUM=${QUALITY%p}
-              YTDLP_FORMAT="best[height<=${QUALITY_NUM}][protocol^=http+https][ext=m3u8]/best[protocol^=http+https]/best"
+              Q_NUM=${QUALITY%p}
+              FORMAT="best[height<=${Q_NUM}][protocol^=http+https][ext=m3u8]/best[protocol^=http+https]/best"
 
-              # HLS/M3U8 linki al
+              # M3U8 linki al
               if [ -f cookies.txt ]; then
-                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --hls-prefer-ffmpeg -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
-                STREAM_URL=$(yt-dlp --no-warnings --skip-download --hls-prefer-ffmpeg -f "$YTDLP_FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               fi
 
-              if [ -z "$STREAM_URL" ]; then
-                STREAM_URL="❌ Link bulunamadı"
-              fi
+              [ -z "$STREAM_URL" ] && STREAM_URL="❌ Link bulunamadı"
 
               # EXTINF satırını bul ve linki güncelle
               if grep -q "$DISPLAY_NAME" live.m3u; then
@@ -121,15 +107,14 @@ jobs:
                 echo "$STREAM_URL" >> live.m3u
               fi
 
-              echo "✅ FOUND: ${DISPLAY_NAME}"
+              echo "✅ FOUND: $DISPLAY_NAME"
             else
-              echo "❌ NOT LIVE: ${DISPLAY_NAME}"
+              echo "❌ NOT LIVE: $DISPLAY_NAME"
             fi
           }
 
-          export -f process_channel
-          export GIST_ID GIST_TOKEN
-          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P5 -I {} bash -c 'process_channel "$@"' _ {}
+          export -f update_channel
+          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P5 -I {} bash -c 'update_channel "$@"' _ {}
 
           [ -f cookies.txt ] && rm -f cookies.txt
 
@@ -138,7 +123,7 @@ jobs:
             echo "❌ No live streams found." >> live.m3u
           fi
 
-      - name: Update Gist (via curl)
+      - name: Update Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -148,7 +133,7 @@ jobs:
             exit 0
           fi
 
-          CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('live.m3u', 'r', encoding='utf-8').read()))")
+          CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('live.m3u','r',encoding='utf-8').read()))")
 
           PAYLOAD="{\"files\": {\"live.m3u\": {\"content\": $CONTENT_JSON}}}"
 
