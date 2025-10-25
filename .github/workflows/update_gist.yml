@@ -2,13 +2,13 @@ name: Update YouTube Live List
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
- workflow_dispatch:
- 
- permissions:
-   contents: read
+    - cron: "*/700 * * * *"   # Her 5 dakikada bir çalışır
+  workflow_dispatch:
 
-  jobs:
+permissions:
+  contents: read
+
+jobs:
   update:
     runs-on: ubuntu-latest
 
