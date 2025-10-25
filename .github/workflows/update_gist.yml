@@ -42,24 +42,31 @@ jobs:
             exit 1
           fi
 
-      - name: Read channels and build live.m3u
+      - name: Read channels and build/update live.m3u
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           set -e
-          echo "#EXTM3U" > live.m3u
 
+          # Fetch existing live.m3u from Gist, fallback if empty
+          EXISTING=$(curl -s -H "Authorization: token $GIST_TOKEN" \
+            "https://api.github.com/gists/$GIST_ID" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['files']['live.m3u']['content'])" \
+            || echo "#EXTM3U\n")
+
+          echo "$EXISTING" > live.m3u
+
+          # Read channels.txt and process
           while IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY; do
-            # skip empty or comment lines
             if [ -z "$CHANNEL_HANDLE" ] || echo "$CHANNEL_HANDLE" | grep -qE '^\s*#'; then
               continue
             fi
-
-            # ensure handle starts with @
             if [[ "$CHANNEL_HANDLE" != @* ]]; then
               CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
             fi
 
             YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
-
             if [ -f cookies.txt ]; then
               OUT=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(webpage_url)s" 2>/dev/null || true)
             else
@@ -68,47 +75,26 @@ jobs:
 
             if echo "$OUT" | grep -q "True"; then
               VID=$(echo "$OUT" | awk '{print $2}')
-              echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
-              echo "$VID" >> live.m3u
+              # Check if display_name exists in live.m3u
+              if grep -qE "#EXTINF:-1,${DISPLAY_NAME} \[" live.m3u; then
+                # Update existing link
+                sed -i "/#EXTINF:-1,${DISPLAY_NAME} \[/!b;n;c\\$VID" live.m3u
+              else
+                # Append new channel
+                echo "#EXTINF:-1,${DISPLAY_NAME} [${QUALITY}]" >> live.m3u
+                echo "$VID" >> live.m3u
+              fi
               echo "FOUND: ${DISPLAY_NAME} -> $VID"
             else
               echo "NOT LIVE: ${DISPLAY_NAME}"
             fi
-
           done < channels.txt
 
-          # clean cookies
-          if [ -f cookies.txt ]; then
-            rm -f cookies.txt
-          fi
+          # Clean cookies
+          [ -f cookies.txt ] && rm -f cookies.txt
 
-          # if empty, write notice
+          # If live.m3u is empty, write notice
           if [ ! -s live.m3u ]; then
             echo "#EXTM3U" > live.m3u
             echo "# No live streams found." >> live.m3u
           fi
-
-      - name: Update Gist (via curl)
-        env:
-          GIST_ID: ${{ secrets.GIST_ID }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-        run: |
-          if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            echo "GIST_ID veya GIST_TOKEN eksik, Gist güncellenemiyor."
-            exit 0
-          fi
-
-          # Escape live.m3u content to a JSON string safely using python
-          CONTENT_JSON=$(python3 -c "import json,sys; print(json.dumps(open('live.m3u', 'r', encoding='utf-8').read()))")
-
-          PAYLOAD="{\"files\": {\"live.m3u\": {\"content\": $CONTENT_JSON}}}"
-
-          # Patch the gist
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X PATCH \
-            -H "Authorization: token ${GIST_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "${PAYLOAD}" \
-            "https://api.github.com/gists/${GIST_ID}")
-
-          echo "Gist update HTTP status: $HTTP_STATUS"
