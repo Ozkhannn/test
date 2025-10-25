@@ -1,19 +1,19 @@
-@tv100 ,Tv 100,480p
-@tvnet ,Tv Net Youtube,480p
-@cnnturk ,Cnn Turk,720p
-@DiyanetCocuk ,Diyanet Cocuk YT,480p
-@zenginkizfakiroglantrt ,Zengin Kız Fakir Oğlan,480p
-@nostaljitrt ,Trt Nostalji,480p
-@seksenlertrt ,Seksenler,480p
-@leylailemecnundizisitrt ,Leyla İle Mecnun,480p
-@mashabearturkey ,Masha ve Koca Ayı,480p
-@biberciktv ,Bibercik Tv,480p
-@niloyatv ,Niloya,480p
-@worldofrcfans ,World Of Rc,480p
-UChF-aTx5nydqcVHVGSKRKlA ,Yardımcı Arabalar,480p
-UCVy8p_-CFrIRJ55wxV5F2gw ,Kids Tv,480p
-UCovav2A4vB5HWORzgB7YC_Q ,Küçük Kamyon Leo,480p
-@mutlucocuk ,Mutlu Çocuk,480p
-@cartoonnetworkturkiye ,Cartoon Network,480p
+@tv100,Tv 100,480p
+@tvnet,Tv Net Youtube,480p
+@cnnturk,Cnn Turk,720p
+@DiyanetCocuk,Diyanet Cocuk YT,480p
+@zenginkizfakiroglantrt,Zengin Kız Fakir Oğlan,480p
+@nostaljitrt,Trt Nostalji,480p
+@seksenlertrt,Seksenler,480p
+@leylailemecnundizisitrt,Leyla İle Mecnun,480p
+@mashabearturkey,Masha ve Koca Ayı,480p
+@biberciktv,Bibercik Tv,480p
+@niloyatv,Niloya,480p
+@worldofrcfans,World Of Rc,480p
+UChF-aTx5nydqcVHVGSKRKlA,Yardımcı Arabalar,480p
+UCVy8p_-CFrIRJ55wxV5F2gw,Kids Tv,480p
+UCovav2A4vB5HWORzgB7YC_Q,Küçük Kamyon Leo,480p
+@mutlucocuk,Mutlu Çocuk,480p
+@cartoonnetworkturkiye,Cartoon Network,480p
 
 
