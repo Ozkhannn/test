@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Python (for JSON processing)
+      - name: Setup Python (for JSON)
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: pip install --upgrade yt-dlp requests
 
-      - name: Prepare cookies
+      - name: Prepare cookies (Netscape format)
         env:
           COOKIES_CONTENT: ${{ secrets.YT_COOKIES }}
         run: |
@@ -54,21 +54,21 @@ jobs:
         run: |
           set -e
           touch live.m3u
-          # Fonksiyon kanal güncellemesi
+
           update_channel() {
             LINE="$1"
             IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY <<< "$LINE"
             [ -z "$CHANNEL_HANDLE" ] && return
-            [[ "$CHANNEL_HANDLE" != @* ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
+            [[ "$CHANNEL_HANDLE" != @* && ! "$CHANNEL_HANDLE" =~ ^UC ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
 
-            # YouTube live URL
+            # Canlı URL
             if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
               YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
             else
               YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             fi
 
-            # Canlı kontrolü ve ID al
+            # Canlı kontrolü ve video ID al
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -77,10 +77,10 @@ jobs:
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
+              # Kalite kontrolü
               Q_NUM=${QUALITY%p}
-              FORMAT="best[height<=${Q_NUM}][protocol^=http+https][ext=m3u8]/best[protocol^=http+https]/best"
+              FORMAT="bestvideo[height<=${Q_NUM}]+bestaudio/best[height<=${Q_NUM}]/best"
 
-              # M3U8 linki al
               if [ -f cookies.txt ]; then
                 STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
@@ -107,9 +107,9 @@ jobs:
                 echo "$STREAM_URL" >> live.m3u
               fi
 
-              echo "✅ FOUND: $DISPLAY_NAME"
+              echo "✅ $DISPLAY_NAME"
             else
-              echo "❌ NOT LIVE: $DISPLAY_NAME"
+              echo "❌ $DISPLAY_NAME"
             fi
           }
 
@@ -134,7 +134,6 @@ jobs:
           fi
 
           CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('live.m3u','r',encoding='utf-8').read()))")
-
           PAYLOAD="{\"files\": {\"live.m3u\": {\"content\": $CONTENT_JSON}}}"
 
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
