@@ -57,11 +57,10 @@ jobs:
 
           echo "$EXISTING" > live.m3u
 
-          python3 - <<'PYCODE'
-import os
+python3 - <<'PYCODE'
 import yt_dlp
 
-# Read channels
+# Read channels.txt
 channels = []
 with open("channels.txt", "r", encoding="utf-8") as f:
     for line in f:
