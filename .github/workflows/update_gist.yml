@@ -59,7 +59,7 @@ jobs:
 
           # Run main Python logic
           python3 - <<'PYCODE'
-import yt_dlp
+ import yt_dlp
 
 channels = []
 with open("channels.txt", "r", encoding="utf-8") as f:
