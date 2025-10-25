@@ -79,25 +79,26 @@ jobs:
             echo "# No live streams found." >> live.m3u
           fi
 
-          # Python Gist update
+- name: Python Gist update
+        run: |
           python3 - <<'PYCODE'
-import os
-import requests
-import json
+            import os
+            import requests
+            import json
 
-gist_id = os.environ.get("GIST_ID")
-token = os.environ.get("GIST_TOKEN")
+            gist_id = os.environ.get("GIST_ID")
+            token = os.environ.get("GIST_TOKEN")
 
-if gist_id and token:
-    with open("live.m3u") as f:
-        content = f.read()
-    data = {"files": {"live.m3u": {"content": content}}}
-    r = requests.patch(
-        f"https://api.github.com/gists/{gist_id}",
-        headers={"Authorization": f"token {token}"},
-        data=json.dumps(data)
-    )
-    print("✅ Gist update status:", r.status_code)
-else:
-    print("⚠️ GIST_ID veya GIST_TOKEN yok, Gist güncellenemedi.")
-PYCODE
+            if gist_id and token:
+                with open("live.m3u") as f:
+                    content = f.read()
+                data = {"files": {"live.m3u": {"content": content}}}
+                r = requests.patch(
+                    f"https://api.github.com/gists/{gist_id}",
+                    headers={"Authorization": f"token {token}"},
+                    data=json.dumps(data)
+                )
+                print("✅ Gist update status:", r.status_code)
+            else:
+                print("⚠️ GIST_ID veya GIST_TOKEN yok, Gist güncellenemedi.")
+          PYCODE
