@@ -2,10 +2,10 @@
 @Haberturktv,Haber Turk,480p
 @cnnturk,Cnn Turk,720p
 @DiyanetCocuk,Diyanet Cocuk YT,480p
-@zenginkizfakiroglantrt,Zengin Kız Fakir Oğlan,720p
-@nostaljitrt,Trt Nostalji,720p
-@seksenlertrt,Seksenler,720p
-@leylailemecnundizisitrt,Leyla İle Mecnun,720p
+@zenginkizfakiroglantrt,Zengin Kız Fakir Oğlan,480p
+@nostaljitrt,Trt Nostalji,480p
+@seksenlertrt,Seksenler,480p
+@leylailemecnundizisitrt,Leyla İle Mecnun,480p
 @mashabearturkey,Masha ve Koca Ayı,480p
 @biberciktv,Bibercik Tv,480p
 @niloyatv,Niloya,480p
