@@ -64,11 +64,6 @@ jobs:
           mkdir -p "$OUTDIR"
           rm -f "$OUTDIR"/*.m3u8 || true
 
-          if [ ! -f channels.txt ]; then
-            echo "❌ channels.txt bulunamadı."
-            exit 1
-          fi
-
           while IFS=, read -r HANDLE GIST_FILE || [ -n "$HANDLE" ]; do
             if [[ -z "${HANDLE// /}" || "${HANDLE:0:1}" == "#" ]]; then
               continue
@@ -140,30 +135,36 @@ jobs:
             echo "✅ Manifest oluşturuldu: $MANIFEST_FILE"
           done < channels.txt
 
-          if [ -z "${GIST_ID:-}" ] || [ -z "${GIST_TOKEN:-}" ]; then
-            echo "⚠️ GIST_ID veya GIST_TOKEN yok; Gist yüklemesi atlandı."
-            exit 0
-          fi
+          echo ""
+          echo "🚀 Gist'e yükleme başlatılıyor..."
 
-          python3 - <<PY
+          python3 <<'PY'
 import os, json, glob, requests
-gist_id = os.getenv('GIST_ID')
-gist_token = os.getenv('GIST_TOKEN')
+gist_id = os.getenv("GIST_ID")
+gist_token = os.getenv("GIST_TOKEN")
+
+if not gist_id or not gist_token:
+    print("⚠️ GIST_ID veya GIST_TOKEN tanımlı değil.")
+    raise SystemExit(0)
+
 files = {}
-for path in glob.glob('manifests/*.m3u8'):
-    with open(path, encoding='utf-8') as f:
-        files[os.path.basename(path)] = {'content': f.read()}
+for path in glob.glob("manifests/*.m3u8"):
+    with open(path, encoding="utf-8") as f:
+        content = f.read()
+    files[os.path.basename(path)] = {"content": content}
+
 if not files:
-    print("⚠️ Hiç manifest oluşturulmadı, çıkılıyor.")
-    raise SystemExit
+    print("⚠️ Manifest bulunamadı.")
+    raise SystemExit(0)
+
 payload = {"files": files}
-r = requests.patch(
+resp = requests.patch(
     f"https://api.github.com/gists/{gist_id}",
     headers={
         "Authorization": f"token {gist_token}",
-        "Accept": "application/vnd.github+json"
+        "Accept": "application/vnd.github+json",
     },
-    data=json.dumps(payload)
+    data=json.dumps(payload),
 )
-print(f"Gist güncellendi -> {r.status_code}")
+print(f"✅ Gist güncellendi: HTTP {resp.status_code}")
 PY
