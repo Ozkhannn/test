@@ -1,6 +1,6 @@
-@tvnet,TV Net,480p
-@Haberturktv,Haber Turk,480p
-@cnnturk,Cnn Turk,720p
+@tvnet,TV Net,tvnet.m3u8
+@Haberturktv,Haber Turk,haberturk.m3u8
+@cnnturk,Cnn Turk,cnnturk.m3u8
 @DiyanetCocuk,Diyanet Cocuk YT,480p
 @zenginkizfakiroglantrt,Zengin Kız Fakir Oğlan,480p
 @nostaljitrt,Trt Nostalji,480p
