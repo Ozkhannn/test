@@ -1,4 +1,4 @@
-name: Update YouTube Live List
+name: Update YouTube Live Manifests
 
 on:
   schedule:
@@ -21,18 +21,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache pip
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
+      - name: Install yt-dlp
         run: pip install --upgrade yt-dlp requests
 
-      - name: Prepare cookies (Netscape format)
+      - name: Prepare cookies
         env:
           COOKIES_CONTENT: ${{ secrets.YT_COOKIES }}
         run: |
@@ -40,116 +32,76 @@ jobs:
             echo "$COOKIES_CONTENT" > cookies.txt
           fi
 
-      - name: Normalize channels.txt
-        run: |
-          if [ -f channels.txt ]; then
-            tr -d '\r' < channels.txt > channels_unix.txt
-            mv channels_unix.txt channels.txt
-          else
-            echo "⚠️ channels.txt bulunamadı!"
-            exit 1
-          fi
-
-      - name: Fetch existing live.m3u from Gist
+      - name: Update each channel manifest on Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-        run: |
-          if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            touch live.m3u
-          else
-            curl -s -H "Authorization: token ${GIST_TOKEN}" \
-              https://api.github.com/gists/${GIST_ID} | \
-              python3 -c "import sys,json; data=json.load(sys.stdin); print(data['files'].get('live.m3u',{'content':''})['content'])" > live.m3u
-          fi
-
-      - name: Update live.m3u channels
         run: |
           set -e
+          python3 <<'PYCODE'
+import os, subprocess, json, shlex
 
-          update_channel() {
-            LINE="$1"
-            IFS=',' read -r CHANNEL_HANDLE DISPLAY_NAME QUALITY <<< "$LINE"
-            [ -z "$CHANNEL_HANDLE" ] && return
-            [[ "$CHANNEL_HANDLE" != @* && ! "$CHANNEL_HANDLE" =~ ^UC ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
+GIST_ID = os.getenv("GIST_ID")
+GIST_TOKEN = os.getenv("GIST_TOKEN")
 
-            if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
-              YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
-            else
-              YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
-            fi
+if not GIST_ID or not GIST_TOKEN:
+    raise SystemExit("❌ GIST_ID veya GIST_TOKEN eksik")
 
-            if [ -f cookies.txt ]; then
-              META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
-            else
-              META=$(yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
-            fi
+with open("channels.txt") as f:
+    channels = [line.strip().split(",") for line in f if line.strip() and not line.startswith("#")]
 
-            if echo "$META" | grep -q "True"; then
-              VID_ID=$(echo "$META" | awk '{print $2}')
-              Q_NUM=${QUALITY%p}
-              FORMAT="bestvideo[height<=${Q_NUM}]+bestaudio/best[height<=${Q_NUM}]/best"
+for handle, name, gist_file in channels:
+    print(f"\n[▶] {name} kontrol ediliyor...")
+    yt_url = f"https://www.youtube.com/{handle}/live" if not handle.startswith("UC") else f"https://www.youtube.com/channel/{handle}/live"
 
-              if [ -f cookies.txt ]; then
-                STREAM_URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-              else
-                STREAM_URL=$(yt-dlp --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-              fi
+    try:
+        meta = subprocess.check_output(
+            shlex.split(f"yt-dlp --no-warnings --skip-download --print '%(is_live)s %(id)s' {yt_url}"),
+            text=True
+        ).strip()
+        if "True" not in meta:
+            print(f"❌ {name}: canlı yayın yok.")
+            continue
 
-              [ -z "$STREAM_URL" ] && STREAM_URL="❌ Link bulunamadı"
+        vid_id = meta.split()[1]
+        print(f"🎥 Yayın ID: {vid_id}")
 
-              # Güvenli güncelleme: manuel kanallar ve logo satırları korunur
-              tmpfile=$(mktemp)
-              awk -v name="$DISPLAY_NAME" -v url="$STREAM_URL" '
-                BEGIN{updated=0}
-                /^#EXTINF:/ {
-                  if ($0 ~ name && updated==0) {
-                    print
-                    getline
-                    print url
-                    updated=1
-                    next
-                  }
-                }
-                {print}
-                END {if(updated==0){print "#EXTINF:-1,"name" ["ENVIRON["QUALITY"]"]\n"url}}
-              ' live.m3u > "$tmpfile"
-              mv "$tmpfile" live.m3u
+        # Tüm HLS kalite linklerini topla
+        formats = subprocess.check_output(
+            shlex.split(f"yt-dlp --no-warnings --skip-download -F https://www.youtube.com/watch?v={vid_id}"),
+            text=True
+        )
 
-              echo "✅ $DISPLAY_NAME"
-            else
-              echo "❌ $DISPLAY_NAME"
-            fi
-          }
+        manifest = ["#EXTM3U", "#EXT-X-VERSION:3"]
+        for line in formats.splitlines():
+            if "m3u8" in line:
+                parts = line.split()
+                fmt_id = parts[0]
+                res = next((p for p in parts if "p" in p), "auto")
+                url = subprocess.check_output(
+                    shlex.split(f"yt-dlp --no-warnings --skip-download -f {fmt_id} --get-url https://www.youtube.com/watch?v={vid_id}"),
+                    text=True
+                ).strip()
+                manifest.append(f'#EXT-X-STREAM-INF:BANDWIDTH=0,RESOLUTION={res},NAME="{res}"')
+                manifest.append(url)
 
-          export -f update_channel
-          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P5 -I {} bash -c 'update_channel "$@"' _ {}
+        if len(manifest) <= 2:
+            print(f"⚠️ {name}: format bulunamadı.")
+            continue
 
-          [ -f cookies.txt ] && rm -f cookies.txt
+        manifest_str = "\n".join(manifest)
 
-          if [ ! -s live.m3u ]; then
-            echo "#EXTM3U" > live.m3u
-            echo "❌ No live streams found." >> live.m3u
-          fi
+        # Gist’e yükle
+        payload = json.dumps({ "files": { gist_file: { "content": manifest_str } } })
+        subprocess.run([
+            "curl", "-s", "-X", "PATCH",
+            "-H", f"Authorization: token {GIST_TOKEN}",
+            "-H", "Content-Type: application/json",
+            "-d", payload,
+            f"https://api.github.com/gists/{GIST_ID}"
+        ], check=True)
+        print(f"✅ {name} ({gist_file}) güncellendi.")
 
-      - name: Update Gist
-        env:
-          GIST_ID: ${{ secrets.GIST_ID }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-        run: |
-          if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            echo "⚠️ GIST_ID veya GIST_TOKEN eksik, Gist güncellenemiyor."
-            exit 0
-          fi
-
-          CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('live.m3u','r',encoding='utf-8').read()))")
-          PAYLOAD="{\"files\": {\"live.m3u\": {\"content\": $CONTENT_JSON}}}"
-
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X PATCH \
-            -H "Authorization: token ${GIST_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "${PAYLOAD}" \
-            "https://api.github.com/gists/${GIST_ID}")
-
-          echo "✅ Gist update HTTP status: $HTTP_STATUS"
+    except subprocess.CalledProcessError as e:
+        print(f"❌ {name}: hata oluştu: {e}")
+PYCODE
