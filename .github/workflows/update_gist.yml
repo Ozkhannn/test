@@ -1,13 +1,17 @@
-name: Update YouTube Gist Streams
+name: Update YouTube Live Multi M3U8
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
+
+permissions:
+  contents: read
 
 jobs:
   update:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -17,11 +21,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install deps
-        run: |
-          pip install --upgrade yt-dlp requests
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-      - name: Prepare cookies
+      - name: Install dependencies
+        run: pip install --upgrade yt-dlp requests
+
+      - name: Prepare cookies (Netscape format)
         env:
           COOKIES_CONTENT: ${{ secrets.YT_COOKIES }}
         run: |
@@ -29,87 +40,91 @@ jobs:
             echo "$COOKIES_CONTENT" > cookies.txt
           fi
 
-      - name: Update Gist manifests
+      - name: Normalize channels.txt
+        run: |
+          if [ -f channels.txt ]; then
+            tr -d '\r' < channels.txt > channels_unix.txt
+            mv channels_unix.txt channels.txt
+          else
+            echo "⚠️ channels.txt bulunamadı!"
+            exit 1
+          fi
+
+      - name: Process channels and update Gist
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
-          echo "Başlatılıyor..."
-          python - <<'PYCODE' import os, json, subprocess, requests
+          set -e
 
-   gist_id = os.getenv("GIST_ID")
-   token = os.getenv("GIST_TOKEN")
-   cookies = "cookies.txt" if os.path.exists("cookies.txt") else None
-if not gist_id or not token:
-    raise SystemExit("❌ GIST_ID veya GIST_TOKEN eksik.")
+          update_channel() {
+            LINE="$1"
+            IFS=',' read -r CHANNEL_HANDLE FILE_NAME <<< "$LINE"
+            [ -z "$CHANNEL_HANDLE" ] && return
+            [[ "$CHANNEL_HANDLE" != @* && ! "$CHANNEL_HANDLE" =~ ^UC ]] && CHANNEL_HANDLE="@${CHANNEL_HANDLE}"
 
-def run(cmd):
-    try:
-        return subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).strip()
-    except:
-        return ""
+            if [[ "$CHANNEL_HANDLE" =~ ^UC ]]; then
+              YT_URL="https://www.youtube.com/channel/${CHANNEL_HANDLE}/live"
+            else
+              YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
+            fi
 
-def live_id(ch):
-    url = f"https://www.youtube.com/{ch}/live" if ch.startswith("@") else f"https://www.youtube.com/channel/{ch}/live"
-    cmd = ["yt-dlp","--no-warnings","--skip-download","--print","%(is_live)s %(id)s",url]
-    if cookies: cmd.insert(1,"--cookies"); cmd.insert(2,cookies)
-    out = run(cmd)
-    if out.startswith("True"):
-        return out.split()[1]
-    return None
+            echo "[▶] $CHANNEL_HANDLE işleniyor..."
 
-def manifest(urls):
-    bw = {"144":"150000","240":"400000","360":"800000","480":"1200000","720":"2500000","1080":"4500000"}
-    res = {"144":"256x144","240":"426x240","360":"640x360","480":"854x480","720":"1280x720","1080":"1920x1080"}
-    lines=["#EXTM3U","#EXT-X-VERSION:3"]
-    for q in ["144","240","360","480","720","1080"]:
-        if q in urls:
-            lines.append(f'#EXT-X-STREAM-INF:BANDWIDTH={bw[q]},RESOLUTION={res[q]}')
-            lines.append(urls[q])
-    return "\n".join(lines)
+            if [ -f cookies.txt ]; then
+              META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
+            else
+              META=$(yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
+            fi
 
-def get_urls(video_id):
-    urls={}
-    base=f"https://www.youtube.com/watch?v={video_id}"
-    for q in ["144","240","360","480","720","1080"]:
-        fmt=f"bestvideo[height<={q}]+bestaudio/best[height<={q}]/best"
-        cmd=["yt-dlp","--no-warnings","--skip-download","-f",fmt,"--get-url",base]
-        if cookies: cmd.insert(1,"--cookies"); cmd.insert(2,cookies)
-        out=run(cmd)
-        if out: urls[q]=out.splitlines()[0]
-    return urls
+            if echo "$META" | grep -q "True"; then
+              VID_ID=$(echo "$META" | awk '{print $2}')
+              echo "[+] Yayın bulundu: $VID_ID"
 
-if not os.path.exists("channels.txt"):
-    raise SystemExit("⚠️ channels.txt yok")
+              # Mevcut kalite seçeneklerini al
+              if [ -f cookies.txt ]; then
+                FORMATS=$(yt-dlp --cookies cookies.txt --no-warnings -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep -E '^[0-9]+.*(p|audio)' || true)
+              else
+                FORMATS=$(yt-dlp --no-warnings -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep -E '^[0-9]+.*(p|audio)' || true)
+              fi
 
-files = {}
-for line in open("channels.txt"):
-    if not line.strip() or line.startswith("#"): continue
-    ch,gfile=[p.strip() for p in line.split(",")]
-    print(f"[▶] {ch} işleniyor...")
-    vid=live_id(ch)
-    if not vid:
-        print(f"❌ {ch}: canlı değil")
-        continue
-    urls=get_urls(vid)
-    if not urls:
-        print(f"❌ {ch}: link alınamadı")
-        continue
-    files[gfile]={"content":manifest(urls)}
-    print(f"✅ {ch}: {len(urls)} kalite bulundu")
+              echo "#EXTM3U" > "$FILE_NAME"
+              echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
+              echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-if not files:
-    raise SystemExit("❌ Hiçbir kanal bulunamadı")
+              echo "$FORMATS" | while read -r FORMAT_LINE; do
+                FID=$(echo "$FORMAT_LINE" | awk '{print $1}')
+                QDESC=$(echo "$FORMAT_LINE" | awk '{print $2}')
+                if [ -f cookies.txt ]; then
+                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                else
+                  URL=$(yt-dlp --no-warnings --skip-download -f "$FID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                fi
+                if [ -n "$URL" ]; then
+                  echo "#EXT-X-STREAM-INF:RESOLUTION=${QDESC},NAME=\"${QDESC}\"" >> "$FILE_NAME"
+                  echo "$URL" >> "$FILE_NAME"
+                fi
+              done
 
-print("⏫ Gist güncelleniyor...")
-resp=requests.patch(
-    f"https://api.github.com/gists/{gist_id}",
-    headers={"Authorization":f"token {token}","Accept":"application/vnd.github+json"},
-    data=json.dumps({"files":files})
-)
-print("HTTP:",resp.status_code)
-if resp.status_code>=300:
-    print(resp.text)
-else:
-    print("✅ Gist güncellendi.")
-PYCODE
+              echo "✅ $FILE_NAME oluşturuldu."
+
+              CONTENT_JSON=$(python3 -c "import sys,json; print(json.dumps(open('$FILE_NAME','r',encoding='utf-8').read()))")
+              PAYLOAD="{\"files\": {\"$FILE_NAME\": {\"content\": $CONTENT_JSON}}}"
+
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X PATCH \
+                -H "Authorization: token ${GIST_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "${PAYLOAD}" \
+                "https://api.github.com/gists/${GIST_ID}")
+
+              echo "🌐 Gist güncellendi: $FILE_NAME (HTTP $HTTP_STATUS)"
+            else
+              echo "❌ $CHANNEL_HANDLE yayında değil."
+            fi
+          }
+
+          export -f update_channel
+          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P3 -I {} bash -c 'update_channel "$@"' _ {}
+
+          [ -f cookies.txt ] && rm -f cookies.txt
