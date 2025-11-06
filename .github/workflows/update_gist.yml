@@ -102,6 +102,7 @@ jobs:
                 fi
                 if [ -n "$URL" ]; then
                   echo "#EXT-X-STREAM-INF:BANDWIDTH=$((RANDOM%2000000+400000)),FRAME-RATE=25.00,CODECS=\"avc1.42001e,mp4a.40.2\",RESOLUTION=${QDESC}" >> "$FILE_NAME"
+                  echo "$STREAM_URL" >> "$FILE_NAME"
                 fi
               done
 
