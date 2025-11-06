@@ -21,14 +21,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache pip
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
       - name: Install dependencies
         run: pip install --upgrade yt-dlp requests
 
@@ -38,6 +30,9 @@ jobs:
         run: |
           if [ -n "$COOKIES_CONTENT" ]; then
             echo "$COOKIES_CONTENT" > cookies.txt
+            echo "✅ cookies.txt oluşturuldu."
+          else
+            echo "⚠️ YT_COOKIES yok; anonim erişim deneniyor."
           fi
 
       - name: Normalize channels.txt
@@ -45,119 +40,149 @@ jobs:
           if [ -f channels.txt ]; then
             tr -d '\r' < channels.txt > channels_unix.txt
             mv channels_unix.txt channels.txt
+            echo "✅ channels.txt normalizasyonu tamam."
           else
-            echo "⚠️ channels.txt bulunamadı!"
+            echo "❌ channels.txt bulunamadı!"
             exit 1
           fi
 
-      - name: Process Channels and Update Gist Files
+      - name: Build and run updater script
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
-          set -e
-          echo "🚀 Multi-quality manifest oluşturuluyor..."
+          set -euo pipefail
+          TMP_PY=/tmp/update_gist.py
 
-          python3 <<'PYCODE'
-import os, subprocess, json, requests
+          cat > "$TMP_PY" <<'PY'
+#!/usr/bin/env python3
+import os, subprocess, json, requests, glob
 
-gist_id = os.environ.get("GIST_ID")
-gist_token = os.environ.get("GIST_TOKEN")
-cookies_file = "cookies.txt" if os.path.exists("cookies.txt") else None
+GIST_ID = os.getenv("GIST_ID")
+GIST_TOKEN = os.getenv("GIST_TOKEN")
+COOKIES = "cookies.txt" if os.path.exists("cookies.txt") else None
 
-if not gist_id or not gist_token:
+if not GIST_ID or not GIST_TOKEN:
     print("❌ GIST_ID veya GIST_TOKEN eksik.")
-    exit(1)
+    raise SystemExit(1)
 
 headers = {
-    "Authorization": f"token {gist_token}",
+    "Authorization": f"token {GIST_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
 }
 
-def get_yt_meta(channel):
-    """Canlı yayın açık mı, video ID'si nedir öğren."""
-    url = f"https://www.youtube.com/{channel}/live"
-    base_cmd = ["yt-dlp", "--no-warnings", "--skip-download", "--print", "%(is_live)s %(id)s", url]
-    if cookies_file:
-        base_cmd[1:1] = ["--cookies", cookies_file]
+def run_cmd(cmd):
     try:
-        meta = subprocess.check_output(base_cmd, text=True, stderr=subprocess.DEVNULL).strip()
-        is_live, vid_id = meta.split()
-        return is_live == "True", vid_id
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+        return out.strip()
     except Exception:
-        return False, None
+        return ""
+
+def get_live_video_id(channel_handle):
+    # normalize channel url
+    if channel_handle.startswith("UC"):
+        url = f"https://www.youtube.com/channel/{channel_handle}/live"
+    else:
+        if not channel_handle.startswith("@"):
+            channel_handle = "@" + channel_handle
+        url = f"https://www.youtube.com/{channel_handle}/live"
+
+    cmd = ["yt-dlp", "--no-warnings", "--skip-download", "--print", "%(is_live)s %(id)s", url]
+    if COOKIES:
+        cmd = ["yt-dlp", "--cookies", COOKIES, "--no-warnings", "--skip-download", "--print", "%(is_live)s %(id)s", url]
+    out = run_cmd(cmd)
+    if out and "True" in out:
+        parts = out.split()
+        if len(parts) >= 2:
+            return parts[1]
+    return None
 
 def get_quality_urls(video_id):
-    """Mevcut tüm kalite linklerini al."""
-    base_url = f"https://www.youtube.com/watch?v={video_id}"
-    formats = ["144", "240", "360", "480", "720", "1080"]
-    urls = {}
-    for q in formats:
+    base = f"https://www.youtube.com/watch?v={video_id}"
+    qualities = ["144","240","360","480","720","1080"]
+    result = {}
+    for q in qualities:
         fmt = f"bestvideo[height<={q}]+bestaudio/best[height<={q}]/best"
-        cmd = ["yt-dlp", "--no-warnings", "--skip-download", "-f", fmt, "--get-url", base_url]
-        if cookies_file:
-            cmd[1:1] = ["--cookies", cookies_file]
-        try:
-            url = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).splitlines()[0]
-            urls[q] = url
-        except Exception:
-            continue
-    return urls
+        cmd = ["yt-dlp", "--no-warnings", "--skip-download", "-f", fmt, "--get-url", base]
+        if COOKIES:
+            cmd = ["yt-dlp", "--cookies", COOKIES, "--no-warnings", "--skip-download", "-f", fmt, "--get-url", base]
+        out = run_cmd(cmd)
+        if out:
+            # take first line
+            url = out.splitlines()[0]
+            result[q] = url
+    return result
 
 def make_manifest(urls):
-    """M3U8 manifest oluştur."""
     lines = ["#EXTM3U", "#EXT-X-VERSION:3"]
-    for q, url in urls.items():
-        bw = {
-            "144": "150000",
-            "240": "400000",
-            "360": "800000",
-            "480": "1200000",
-            "720": "2500000",
-            "1080": "4500000"
-        }.get(q, "800000")
-        res = {
-            "144": "256x144",
-            "240": "426x240",
-            "360": "640x360",
-            "480": "854x480",
-            "720": "1280x720",
-            "1080": "1920x1080"
-        }.get(q, "640x360")
-        lines.append(f"#EXT-X-STREAM-INF:BANDWIDTH={bw},RESOLUTION={res}")
+    bw_map = {"144":"150000","240":"400000","360":"800000","480":"1200000","720":"2500000","1080":"4500000"}
+    res_map = {"144":"256x144","240":"426x240","360":"640x360","480":"854x480","720":"1280x720","1080":"1920x1080"}
+    # ensure deterministic order from lowest to highest
+    for q in ["144","240","360","480","720","1080"]:
+        url = urls.get(q)
+        if not url:
+            continue
+        bw = bw_map.get(q,"800000")
+        res = res_map.get(q,"640x360")
+        lines.append(f'#EXT-X-STREAM-INF:BANDWIDTH={bw},RESOLUTION={res}')
         lines.append(url)
     return "\n".join(lines)
 
-# Tüm gist içeriğini çek
-gist_url = f"https://api.github.com/gists/{gist_id}"
-gist_data = requests.get(gist_url, headers=headers).json()
-files = gist_data.get("files", {})
-
-with open("channels.txt") as f:
-    for line in f:
-        if not line.strip() or line.startswith("#"):
+# read channels
+channels = []
+with open("channels.txt", encoding="utf-8") as f:
+    for raw in f:
+        line = raw.strip()
+        if not line or line.startswith("#"):
             continue
-        channel, filename = [x.strip() for x in line.split(",")]
-        print(f"[▶] {channel} işleniyor...")
+        parts = [p.strip() for p in line.split(",")]
+        # expected: handle,gistfilename
+        if len(parts) >= 2:
+            channels.append((parts[0], parts[1]))
+        else:
+            print(f"⚠️ channels.txt satırı atlandı (format): {line}")
 
-        is_live, vid = get_yt_meta(channel)
-        if not is_live or not vid:
-            print(f"❌ {channel}: canlı değil veya ID bulunamadı.")
-            continue
+if not channels:
+    print("⚠️ channels.txt boş veya geçersiz.")
+    raise SystemExit(0)
 
-        urls = get_quality_urls(vid)
-        if not urls:
-            print(f"⚠️ {channel}: linkler alınamadı.")
-            continue
+# fetch existing gist files (to preserve unrelated files)
+gist_api = f"https://api.github.com/gists/{GIST_ID}"
+resp = requests.get(gist_api, headers=headers)
+if resp.status_code != 200:
+    print("❌ Gist okunamadı:", resp.status_code)
+    raise SystemExit(1)
+gist_json = resp.json()
+files_payload = gist_json.get("files", {}).copy()
 
-        manifest = make_manifest(urls)
-        files[filename] = {"content": manifest}
-        print(f"✅ {channel} -> {filename} ({len(urls)} kalite)")
+# for each channel, build manifest and add/update in files_payload
+for handle, fname in channels:
+    print(f"[▶] İşleniyor: {handle} -> {fname}")
+    vid = get_live_video_id(handle)
+    if not vid:
+        print(f"  ❌ canlı değil veya ID alınamadı: {handle}")
+        continue
+    urls = get_quality_urls(vid)
+    if not urls:
+        print(f"  ⚠️ kalite linki alınamadı: {handle}")
+        continue
+    manifest = make_manifest(urls)
+    files_payload[fname] = {"content": manifest}
+    print(f"  ✅ manifest hazır ({len(urls)} kalite)")
 
-payload = {"files": files}
-r = requests.patch(gist_url, headers=headers, data=json.dumps(payload))
-print(f"📤 Gist güncellendi -> HTTP {r.status_code}")
-PYCODE
+# patch gist with all files in files_payload
+patch = {"files": files_payload}
+r = requests.patch(gist_api, headers=headers, data=json.dumps(patch))
+print("Gist update HTTP", r.status_code)
+if r.status_code >= 400:
+    print("Gist response:", r.text)
+    raise SystemExit(1)
+print("✅ Tüm manifestler Gist'e yüklendi.")
+PY
+
+          python3 "$TMP_PY"
+        shell: bash
 
       - name: Cleanup
-        run: rm -f cookies.txt || true
+        run: |
+          rm -f cookies.txt || true
