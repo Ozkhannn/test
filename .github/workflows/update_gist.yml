@@ -21,8 +21,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install yt-dlp
-        run: pip install --upgrade yt-dlp requests
+      - name: Install dependencies
+        run: |
+          pip install --upgrade yt-dlp requests
 
       - name: Prepare cookies
         env:
@@ -37,91 +38,88 @@ jobs:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
-          set -e
-             python3 <<'PYCODE'
- import os, subprocess, json, shlex
+          import os, subprocess, json, shlex
 
- GIST_ID = os.getenv("GIST_ID")
- GIST_TOKEN = os.getenv("GIST_TOKEN")
+          GIST_ID = os.getenv("GIST_ID")
+          GIST_TOKEN = os.getenv("GIST_TOKEN")
 
-if not GIST_ID or not GIST_TOKEN:
-    raise SystemExit("❌ GIST_ID veya GIST_TOKEN eksik")
+          if not GIST_ID or not GIST_TOKEN:
+              raise SystemExit("❌ GIST_ID veya GIST_TOKEN eksik")
 
-if not os.path.exists("channels.txt"):
-    raise SystemExit("❌ channels.txt bulunamadı")
+          if not os.path.exists("channels.txt"):
+              raise SystemExit("❌ channels.txt bulunamadı")
 
-with open("channels.txt") as f:
-    channels = [line.strip().split(",") for line in f if line.strip() and not line.startswith("#")]
+          with open("channels.txt") as f:
+              channels = [line.strip().split(",") for line in f if line.strip() and not line.startswith("#")]
 
-for handle, name, gist_file in channels:
-    print(f"\n[▶] {name} kontrol ediliyor...")
+          for handle, name, gist_file in channels:
+              print(f"\n[▶] {name} kontrol ediliyor...")
 
-    # Handle'ı normalize et
-    if handle.startswith("UC"):
-        yt_url = f"https://www.youtube.com/channel/{handle}/live"
-    else:
-        if not handle.startswith("@"):
-            handle = "@" + handle
-        yt_url = f"https://www.youtube.com/{handle}/live"
+              # Handle normalize
+              if handle.startswith("UC"):
+                  yt_url = f"https://www.youtube.com/channel/{handle}/live"
+              else:
+                  if not handle.startswith("@"):
+                      handle = "@" + handle
+                  yt_url = f"https://www.youtube.com/{handle}/live"
 
-    try:
-        meta = subprocess.check_output(
-            shlex.split(f"yt-dlp --no-warnings --skip-download --print '%(is_live)s %(id)s' {yt_url}"),
-            text=True
-        ).strip()
+              try:
+                  meta = subprocess.check_output(
+                      shlex.split(f"yt-dlp --no-warnings --skip-download --print '%(is_live)s %(id)s' {yt_url}"),
+                      text=True
+                  ).strip()
 
-        if "True" not in meta:
-            print(f"❌ {name}: canlı yayın yok.")
-            continue
+                  if "True" not in meta:
+                      print(f"❌ {name}: canlı yayın yok.")
+                      continue
 
-        vid_id = meta.split()[1]
-        print(f"🎥 Yayın ID: {vid_id}")
+                  vid_id = meta.split()[1]
+                  print(f"🎥 Yayın ID: {vid_id}")
 
-        # Format listesini al
-        formats = subprocess.check_output(
-            shlex.split(f"yt-dlp --no-warnings --skip-download -F https://www.youtube.com/watch?v={vid_id}"),
-            text=True
-        )
+                  # Format listesini al
+                  formats = subprocess.check_output(
+                      shlex.split(f"yt-dlp --no-warnings --skip-download -F https://www.youtube.com/watch?v={vid_id}"),
+                      text=True
+                  )
 
-        manifest = ["#EXTM3U", "#EXT-X-VERSION:3"]
+                  manifest = ["#EXTM3U", "#EXT-X-VERSION:3"]
 
-        for line in formats.splitlines():
-            if "m3u8" in line:
-                parts = line.split()
-                fmt_id = parts[0]
-                res = next((p for p in parts if "p" in p), "auto")
+                  for line in formats.splitlines():
+                      if "m3u8" in line:
+                          parts = line.split()
+                          fmt_id = parts[0]
+                          res = next((p for p in parts if "p" in p), "auto")
 
-                url = subprocess.check_output(
-                    shlex.split(f"yt-dlp --no-warnings --skip-download -f {fmt_id} --get-url https://www.youtube.com/watch?v={vid_id}"),
-                    text=True
-                ).strip()
+                          url = subprocess.check_output(
+                              shlex.split(f"yt-dlp --no-warnings --skip-download -f {fmt_id} --get-url https://www.youtube.com/watch?v={vid_id}"),
+                              text=True
+                          ).strip()
 
-                manifest.append(f'#EXT-X-STREAM-INF:BANDWIDTH=0,RESOLUTION={res},NAME="{res}"')
-                manifest.append(url)
+                          manifest.append(f'#EXT-X-STREAM-INF:BANDWIDTH=0,RESOLUTION={res},NAME="{res}"')
+                          manifest.append(url)
 
-        if len(manifest) <= 2:
-            print(f"⚠️ {name}: format bulunamadı.")
-            continue
+                  if len(manifest) <= 2:
+                      print(f"⚠️ {name}: format bulunamadı.")
+                      continue
 
-        manifest_str = "\n".join(manifest)
+                  manifest_str = "\n".join(manifest)
 
-        payload = json.dumps({
-            "files": {
-                gist_file: { "content": manifest_str }
-            }
-        })
+                  payload = json.dumps({
+                      "files": {
+                          gist_file: { "content": manifest_str }
+                      }
+                  })
 
-        subprocess.run([
-            "curl", "-s", "-X", "PATCH",
-            "-H", f"Authorization: token {GIST_TOKEN}",
-            "-H", "Content-Type: application/json",
-            "-d", payload,
-            f"https://api.github.com/gists/{GIST_ID}"
-        ], check=True)
+                  subprocess.run([
+                      "curl", "-s", "-X", "PATCH",
+                      "-H", f"Authorization: token {GIST_TOKEN}",
+                      "-H", "Content-Type: application/json",
+                      "-d", payload,
+                      f"https://api.github.com/gists/{GIST_ID}"
+                  ], check=True)
 
-        print(f"✅ {name} ({gist_file}) güncellendi.")
+                  print(f"✅ {name} ({gist_file}) güncellendi.")
 
-    except subprocess.CalledProcessError as e:
-        print(f"❌ {name}: hata oluştu -> {e}")
-
-PYCODE
+              except subprocess.CalledProcessError as e:
+                  print(f"❌ {name}: hata oluştu -> {e}")
+        shell: python
