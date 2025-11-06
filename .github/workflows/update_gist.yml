@@ -39,7 +39,7 @@ jobs:
         run: |
           set -e
           python3 <<'PYCODE'
- import os, subprocess, json, shlex
+import os, subprocess, json, shlex
 
 GIST_ID = os.getenv("GIST_ID")
 GIST_TOKEN = os.getenv("GIST_TOKEN")
@@ -47,18 +47,29 @@ GIST_TOKEN = os.getenv("GIST_TOKEN")
 if not GIST_ID or not GIST_TOKEN:
     raise SystemExit("❌ GIST_ID veya GIST_TOKEN eksik")
 
+if not os.path.exists("channels.txt"):
+    raise SystemExit("❌ channels.txt bulunamadı")
+
 with open("channels.txt") as f:
     channels = [line.strip().split(",") for line in f if line.strip() and not line.startswith("#")]
 
 for handle, name, gist_file in channels:
     print(f"\n[▶] {name} kontrol ediliyor...")
-    yt_url = f"https://www.youtube.com/{handle}/live" if not handle.startswith("UC") else f"https://www.youtube.com/channel/{handle}/live"
+
+    # Handle'ı normalize et
+    if handle.startswith("UC"):
+        yt_url = f"https://www.youtube.com/channel/{handle}/live"
+    else:
+        if not handle.startswith("@"):
+            handle = "@" + handle
+        yt_url = f"https://www.youtube.com/{handle}/live"
 
     try:
         meta = subprocess.check_output(
             shlex.split(f"yt-dlp --no-warnings --skip-download --print '%(is_live)s %(id)s' {yt_url}"),
             text=True
         ).strip()
+
         if "True" not in meta:
             print(f"❌ {name}: canlı yayın yok.")
             continue
@@ -66,22 +77,25 @@ for handle, name, gist_file in channels:
         vid_id = meta.split()[1]
         print(f"🎥 Yayın ID: {vid_id}")
 
-        # Tüm HLS kalite linklerini topla
+        # Format listesini al
         formats = subprocess.check_output(
             shlex.split(f"yt-dlp --no-warnings --skip-download -F https://www.youtube.com/watch?v={vid_id}"),
             text=True
         )
 
         manifest = ["#EXTM3U", "#EXT-X-VERSION:3"]
+
         for line in formats.splitlines():
             if "m3u8" in line:
                 parts = line.split()
                 fmt_id = parts[0]
                 res = next((p for p in parts if "p" in p), "auto")
+
                 url = subprocess.check_output(
                     shlex.split(f"yt-dlp --no-warnings --skip-download -f {fmt_id} --get-url https://www.youtube.com/watch?v={vid_id}"),
                     text=True
                 ).strip()
+
                 manifest.append(f'#EXT-X-STREAM-INF:BANDWIDTH=0,RESOLUTION={res},NAME="{res}"')
                 manifest.append(url)
 
@@ -91,8 +105,12 @@ for handle, name, gist_file in channels:
 
         manifest_str = "\n".join(manifest)
 
-        # Gist’e yükle
-        payload = json.dumps({ "files": { gist_file: { "content": manifest_str } } })
+        payload = json.dumps({
+            "files": {
+                gist_file: { "content": manifest_str }
+            }
+        })
+
         subprocess.run([
             "curl", "-s", "-X", "PATCH",
             "-H", f"Authorization: token {GIST_TOKEN}",
@@ -100,8 +118,10 @@ for handle, name, gist_file in channels:
             "-d", payload,
             f"https://api.github.com/gists/{GIST_ID}"
         ], check=True)
+
         print(f"✅ {name} ({gist_file}) güncellendi.")
 
     except subprocess.CalledProcessError as e:
-        print(f"❌ {name}: hata oluştu: {e}")
+        print(f"❌ {name}: hata oluştu -> {e}")
+
 PYCODE
