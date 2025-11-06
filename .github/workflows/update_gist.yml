@@ -39,7 +39,7 @@ jobs:
         run: |
           set -e
           python3 <<'PYCODE'
-import os, subprocess, json, shlex
+ import os, subprocess, json, shlex
 
 GIST_ID = os.getenv("GIST_ID")
 GIST_TOKEN = os.getenv("GIST_TOKEN")
