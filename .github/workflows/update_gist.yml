@@ -38,7 +38,7 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           set -e
-           python3 <<'PYCODE'
+            python3 <<'PYCODE'
  import os, subprocess, json, shlex
 
  GIST_ID = os.getenv("GIST_ID")
