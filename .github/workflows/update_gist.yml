@@ -1,4 +1,4 @@
-name: Update YouTube Live Multi M3U8
+name: Update YouTube Live List
 
 on:
   schedule:
@@ -50,7 +50,19 @@ jobs:
             exit 1
           fi
 
-      - name: Process channels and update Gist
+      - name: Fetch existing gist metadata
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
+            echo "⚠️ Gist erişim bilgileri eksik."
+            exit 1
+          fi
+          curl -s -H "Authorization: token ${GIST_TOKEN}" \
+            https://api.github.com/gists/${GIST_ID} > gist.json
+
+      - name: Update each channel as separate .m3u8
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -69,8 +81,7 @@ jobs:
               YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             fi
 
-            echo "[▶] $CHANNEL_HANDLE işleniyor..."
-
+            echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -79,52 +90,58 @@ jobs:
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
-              echo "[+] Yayın bulundu: $VID_ID"
+              echo "📺 Yayın bulundu: $VID_ID"
 
-              # Mevcut kalite seçeneklerini al
               if [ -f cookies.txt ]; then
-                FORMATS=$(yt-dlp --cookies cookies.txt --no-warnings -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep -E '^[0-9]+.*(p|audio)' || true)
+                yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
               else
-                FORMATS=$(yt-dlp --no-warnings -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep -E '^[0-9]+.*(p|audio)' || true)
+                yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
               fi
 
               echo "#EXTM3U" > "$FILE_NAME"
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              echo "$FORMATS" | while read -r FORMAT_LINE; do
-                FID=$(echo "$FORMAT_LINE" | awk '{print $1}')
-                QDESC=$(echo "$FORMAT_LINE" | awk '{print $2}')
+              while read -r fmt; do
+                FMT_ID=$(echo "$fmt" | awk '{print $1}')
+                RES=$(echo "$fmt" | grep -oE '[0-9]+x[0-9]+' | head -n1)
+                BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
+                [ -z "$RES" ] && continue
+
                 if [ -f cookies.txt ]; then
-                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
                 else
-                  URL=$(yt-dlp --no-warnings --skip-download -f "$FID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                  URL=$(yt-dlp --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
                 fi
-                if [ -n "$URL" ]; then
-                  echo "#EXT-X-STREAM-INF:BANDWIDTH=$((RANDOM%2000000+400000)),FRAME-RATE=25.00,CODECS=\"avc1.42001e,mp4a.40.2\",RESOLUTION=${QDESC}" >> "$FILE_NAME"
-                  echo "$STREAM_URL" >> "$FILE_NAME"
-                fi
-              done
 
-              echo "✅ $FILE_NAME oluşturuldu."
+                [ -z "$URL" ] && continue
 
-              CONTENT_JSON=$(python3 -c "import sys,json; print(json.dumps(open('$FILE_NAME','r',encoding='utf-8').read()))")
+                echo "#EXT-X-STREAM-INF:BANDWIDTH=$((BW*1000)),RESOLUTION=${RES}" >> "$FILE_NAME"
+                echo "$URL" >> "$FILE_NAME"
+              done < formats.txt
+
+              echo "✅ $FILE_NAME güncellendi"
+
+              CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('$FILE_NAME','r',encoding='utf-8').read()))")
               PAYLOAD="{\"files\": {\"$FILE_NAME\": {\"content\": $CONTENT_JSON}}}"
 
-              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-                -X PATCH \
+              curl -s -X PATCH \
                 -H "Authorization: token ${GIST_TOKEN}" \
                 -H "Content-Type: application/json" \
                 -d "${PAYLOAD}" \
-                "https://api.github.com/gists/${GIST_ID}")
+                "https://api.github.com/gists/${GIST_ID}" > /dev/null
 
-              echo "🌐 Gist güncellendi: $FILE_NAME (HTTP $HTTP_STATUS)"
             else
-              echo "❌ $CHANNEL_HANDLE yayında değil."
+              echo "❌ Yayın bulunamadı: $CHANNEL_HANDLE"
             fi
           }
 
           export -f update_channel
-          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P3 -I {} bash -c 'update_channel "$@"' _ {}
+          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P4 -I {} bash -c 'update_channel "$@"' _ {}
 
           [ -f cookies.txt ] && rm -f cookies.txt
+
+      - name: Temizlik
+        run: |
+          rm -f formats.txt gist.json || true
+          echo "🧹 Temizlik tamamlandı."
