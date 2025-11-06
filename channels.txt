@@ -1,1 +1,5 @@
 @cnnturk,cnnturk.m3u8
+@Haberturktv,haberturk.m3u8
+@DiyanetCocuk,diyanetcocukyoutube.m3u8
+@zenginkizfakiroglantrt,zenginkizfakiroglan.m3u8
+@nostaljitrt,trtnostalji.m3u8
