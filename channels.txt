@@ -1,1 +1,1 @@
-@cnnturk,Cnn Turk,cnnturk.m3u8
+@cnnturk,cnnturk.m3u8
