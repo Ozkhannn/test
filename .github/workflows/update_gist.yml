@@ -37,9 +37,9 @@ jobs:
           echo "Başlatılıyor..."
           python - <<'PYCODE' import os, json, subprocess, requests
 
-gist_id = os.getenv("GIST_ID")
-token = os.getenv("GIST_TOKEN")
-cookies = "cookies.txt" if os.path.exists("cookies.txt") else None
+   gist_id = os.getenv("GIST_ID")
+   token = os.getenv("GIST_TOKEN")
+   cookies = "cookies.txt" if os.path.exists("cookies.txt") else None
 if not gist_id or not token:
     raise SystemExit("❌ GIST_ID veya GIST_TOKEN eksik.")
 
