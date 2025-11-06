@@ -101,8 +101,7 @@ jobs:
                   URL=$(yt-dlp --no-warnings --skip-download -f "$FID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
                 fi
                 if [ -n "$URL" ]; then
-                  echo "#EXT-X-STREAM-INF:RESOLUTION=${QDESC},NAME=\"${QDESC}\"" >> "$FILE_NAME"
-                  echo "$URL" >> "$FILE_NAME"
+                  echo "#EXT-X-STREAM-INF:BANDWIDTH=$((RANDOM%2000000+400000)),FRAME-RATE=25.00,CODECS=\"avc1.42001e,mp4a.40.2\",RESOLUTION=${QDESC}" >> "$FILE_NAME"
                 fi
               done
 
