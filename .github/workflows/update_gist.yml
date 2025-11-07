@@ -151,7 +151,7 @@ jobs:
           }
 
           export -f update_channel
-          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P1 -I {} bash -c 'update_channel "$@"' _ {}
+          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P5 -I {} bash -c 'update_channel "$@"' _ {}
 
           [ -f cookies.txt ] && rm -f cookies.txt
           rm -f formats.txt
