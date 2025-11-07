@@ -93,9 +93,16 @@ jobs:
               echo "📺 Yayın bulundu: $VID_ID"
 
               if [ -f cookies.txt ]; then
-                yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
+               QUALITIES=("480" "720" "1080")
+              for Q in "${QUALITIES[@]}"; do
+               FORMAT="bestvideo[height<=${Q}]+bestaudio/best[height<=${Q}]/best"
+              if [ -f cookies.txt ]; then
+               URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
               else
-                yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
+               URL=$(yt-dlp --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+              fi
+               [ -n "$URL" ] && echo "#EXT-X-STREAM-INF:RESOLUTION=${Q}p" >> "$FILE_NAME" && echo "$URL" >> "$FILE_NAME"
+               done
               fi
 
               echo "#EXTM3U" > "$FILE_NAME"
