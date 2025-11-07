@@ -69,6 +69,9 @@ jobs:
         run: |
           set -e
 
+          # İzin verilen çözünürlükler
+          ALLOWED_RES="1080 720 480"
+
           update_channel() {
             LINE="$1"
             IFS=',' read -r CHANNEL_HANDLE FILE_NAME <<< "$LINE"
@@ -92,33 +95,26 @@ jobs:
               VID_ID=$(echo "$META" | awk '{print $2}')
               echo "📺 Yayın bulundu: $VID_ID"
 
+              # Tek çağrı ile tüm H.264 ve 480/720/1080 çözünürlüklerini al
               if [ -f cookies.txt ]; then
-                yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
+                yt-dlp --cookies cookies.txt --no-warnings --skip-download \
+                  -f "bestvideo[vcodec^=avc][height<=1080][height>=480]+bestaudio/best" \
+                  --get-url "https://www.youtube.com/watch?v=${VID_ID}" > urls.txt
               else
-                yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
+                yt-dlp --no-warnings --skip-download \
+                  -f "bestvideo[vcodec^=avc][height<=1080][height>=480]+bestaudio/best" \
+                  --get-url "https://www.youtube.com/watch?v=${VID_ID}" > urls.txt
               fi
 
               echo "#EXTM3U" > "$FILE_NAME"
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              while read -r fmt; do
-                FMT_ID=$(echo "$fmt" | awk '{print $1}')
-                RES=$(echo "$fmt" | grep -oE '[0-9]+x[0-9]+' | head -n1)
-                BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
-                [ -z "$RES" ] && continue
-
-                if [ -f cookies.txt ]; then
-                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
-                else
-                  URL=$(yt-dlp --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
-                fi
-
+              while read -r URL; do
                 [ -z "$URL" ] && continue
-
-                echo "#EXT-X-STREAM-INF:BANDWIDTH=$((BW*1000)),RESOLUTION=${RES}" >> "$FILE_NAME"
+                echo "#EXT-X-STREAM-INF:BANDWIDTH=0,RESOLUTION=?" >> "$FILE_NAME"
                 echo "$URL" >> "$FILE_NAME"
-              done < formats.txt
+              done < urls.txt
 
               echo "✅ $FILE_NAME güncellendi"
 
@@ -140,8 +136,9 @@ jobs:
           cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P1 -I {} bash -c 'update_channel "$@"' _ {}
 
           [ -f cookies.txt ] && rm -f cookies.txt
+          rm -f urls.txt
 
       - name: Temizlik
         run: |
-          rm -f formats.txt gist.json || true
+          rm -f gist.json || true
           echo "🧹 Temizlik tamamlandı."
