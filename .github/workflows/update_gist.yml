@@ -81,9 +81,10 @@ jobs:
               YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             fi
 
-            echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
-            sleep $((RANDOM % 5 + 2))  # 2-6 saniye rastgele gecikme
+            # 💡 Her kanal kendi içinde rastgele gecikme (4-8 saniye)
+            sleep $((RANDOM % 5 + 4))
 
+            echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -144,7 +145,9 @@ jobs:
           }
 
           export -f update_channel
-          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P1 -I {} bash -c 'update_channel "$@"' _ {}
+
+          # Paralel 5 işlem, her biri kendi içinde gecikmeli
+          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P5 -I {} bash -c 'update_channel "$@"' _ {}
 
           [ -f cookies.txt ] && rm -f cookies.txt
 
