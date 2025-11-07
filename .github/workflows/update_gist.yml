@@ -109,10 +109,18 @@ jobs:
                 [ -z "$RES" ] && continue
 
                 if [ -f cookies.txt ]; then
-                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
+                  QUALITIES=("480" "720" "1080")
+                  for Q in "${QUALITIES[@]}"; do
+                  FORMAT="bestvideo[height<=${Q}]+bestaudio/best[height<=${Q}]/best"
+                if [ -f cookies.txt ]; then
+                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
                 else
-                  URL=$(yt-dlp --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
+                  URL=$(yt-dlp --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
                 fi
+                 [ -n "$URL" ] && echo "#EXT-X-STREAM-INF:RESOLUTION=${Q}p" >> "$DISPLAY_NAME" && echo "$URL" >> "$DISPLAY_NAME"
+                  done
+                fi
+
 
                 [ -z "$URL" ] && continue
 
