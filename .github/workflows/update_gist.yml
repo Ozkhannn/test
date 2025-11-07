@@ -46,7 +46,7 @@ jobs:
             tr -d '\r' < channels.txt > channels_unix.txt
             mv channels_unix.txt channels.txt
           else
-            echo "⚠️ channels.txt bulunamadı!"
+            echo "channels.txt bulunamadı!"
             exit 1
           fi
 
@@ -56,7 +56,7 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            echo "⚠️ Gist erişim bilgileri eksik."
+            echo "Gist erişim bilgileri eksik."
             exit 1
           fi
           curl -s -H "Authorization: token ${GIST_TOKEN}" \
@@ -68,6 +68,9 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           set -e
+
+          # İzin verilen çözünürlükler (tek satırda, kolayca değiştirilebilir)
+          ALLOWED_RES="1080 720 480"
 
           update_channel() {
             LINE="$1"
@@ -81,7 +84,7 @@ jobs:
               YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             fi
 
-            echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
+            echo "$CHANNEL_HANDLE kontrol ediliyor..."
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -90,19 +93,12 @@ jobs:
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
-              echo "📺 Yayın bulundu: $VID_ID"
+              echo "Yayın bulundu: $VID_ID"
 
               if [ -f cookies.txt ]; then
-               QUALITIES=("480" "720" "1080")
-              for Q in "${QUALITIES[@]}"; do
-               FORMAT="bestvideo[height<=${Q}]+bestaudio/best[height<=${Q}]/best"
-              if [ -f cookies.txt ]; then
-               URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
+                yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
               else
-               URL=$(yt-dlp --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-              fi
-               [ -n "$URL" ] && echo "#EXT-X-STREAM-INF:RESOLUTION=${Q}p" >> "$FILE_NAME" && echo "$URL" >> "$FILE_NAME"
-               done
+                yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
               fi
 
               echo "#EXTM3U" > "$FILE_NAME"
@@ -115,19 +111,17 @@ jobs:
                 BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
                 [ -z "$RES" ] && continue
 
-                if [ -f cookies.txt ]; then
-                  QUALITIES=("480" "720" "1080")
-                  for Q in "${QUALITIES[@]}"; do
-                  FORMAT="bestvideo[height<=${Q}]+bestaudio/best[height<=${Q}]/best"
-                if [ -f cookies.txt ]; then
-                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-                else
-                  URL=$(yt-dlp --no-warnings --skip-download -f "$FORMAT" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1 || true)
-                fi
-                 [ -n "$URL" ] && echo "#EXT-X-STREAM-INF:RESOLUTION=${Q}p" >> "$DISPLAY_NAME" && echo "$URL" >> "$DISPLAY_NAME"
-                  done
+                HEIGHT=$(echo "$RES" | cut -d'x' -f2)
+                # Sadece ALLOWED_RES içindekileri geçir
+                if ! echo "$ALLOWED_RES" | grep -qw "$HEIGHT"; then
+                  continue
                 fi
 
+                if [ -f cookies.txt ]; then
+                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
+                else
+                  URL=$(yt-dlp --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
+                fi
 
                 [ -z "$URL" ] && continue
 
@@ -135,7 +129,7 @@ jobs:
                 echo "$URL" >> "$FILE_NAME"
               done < formats.txt
 
-              echo "✅ $FILE_NAME güncellendi"
+              echo "$FILE_NAME güncellendi"
 
               CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('$FILE_NAME','r',encoding='utf-8').read()))")
               PAYLOAD="{\"files\": {\"$FILE_NAME\": {\"content\": $CONTENT_JSON}}}"
@@ -147,7 +141,7 @@ jobs:
                 "https://api.github.com/gists/${GIST_ID}" > /dev/null
 
             else
-              echo "❌ Yayın bulunamadı: $CHANNEL_HANDLE"
+              echo "Yayın bulunamadı: $CHANNEL_HANDLE"
             fi
           }
 
@@ -159,4 +153,4 @@ jobs:
       - name: Temizlik
         run: |
           rm -f formats.txt gist.json || true
-          echo "🧹 Temizlik tamamlandı."
+          echo "Temizlik tamamlandı."
