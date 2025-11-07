@@ -111,7 +111,7 @@ jobs:
                 BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
                 [ -z "$RES" ] && continue
 
-                if [[ "$RES" != "1920x1080" && "$RES" != "1280x720" && "$RES" != "640x360" ]]; then
+                if [[ "$RES" != "1920x1080" && "$RES" != "1280x720" && "$RES" != "640x480" ]]; then
                   continue
                 fi
 
