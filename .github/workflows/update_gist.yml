@@ -82,6 +82,8 @@ jobs:
             fi
 
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
+            sleep $((RANDOM % 5 + 2))  # 2-6 saniye rastgele gecikme
+
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -102,11 +104,16 @@ jobs:
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
+              # Sadece 1080p, 720p, 480p formatlarını al
               while read -r fmt; do
                 FMT_ID=$(echo "$fmt" | awk '{print $1}')
                 RES=$(echo "$fmt" | grep -oE '[0-9]+x[0-9]+' | head -n1)
                 BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
                 [ -z "$RES" ] && continue
+
+                if [[ "$RES" != "1920x1080" && "$RES" != "1280x720" && "$RES" != "854x480" ]]; then
+                  continue
+                fi
 
                 if [ -f cookies.txt ]; then
                   URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
