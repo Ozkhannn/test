@@ -46,7 +46,7 @@ jobs:
             tr -d '\r' < channels.txt > channels_unix.txt
             mv channels_unix.txt channels.txt
           else
-            echo "channels.txt bulunamadı!"
+            echo "⚠️ channels.txt bulunamadı!"
             exit 1
           fi
 
@@ -56,7 +56,7 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           if [ -z "$GIST_ID" ] || [ -z "$GIST_TOKEN" ]; then
-            echo "Gist erişim bilgileri eksik."
+            echo "⚠️ Gist erişim bilgileri eksik."
             exit 1
           fi
           curl -s -H "Authorization: token ${GIST_TOKEN}" \
@@ -68,9 +68,6 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           set -e
-
-          # İzin verilen çözünürlükler (tek satırda, kolayca değiştirilebilir)
-          ALLOWED_RES="1080 720 480"
 
           update_channel() {
             LINE="$1"
@@ -84,7 +81,7 @@ jobs:
               YT_URL="https://www.youtube.com/${CHANNEL_HANDLE}/live"
             fi
 
-            echo "$CHANNEL_HANDLE kontrol ediliyor..."
+            echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
             else
@@ -93,48 +90,37 @@ jobs:
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
-              echo "Yayın bulundu: $VID_ID"
+              echo "📺 Yayın bulundu: $VID_ID"
 
-              # Format listesini al
               if [ -f cookies.txt ]; then
-                yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" > formats.txt
+                yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
               else
-                yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" > formats.txt
+                yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' > formats.txt
               fi
 
               echo "#EXTM3U" > "$FILE_NAME"
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              declare -A USED_RES  # Tek çözünürlükte birden fazla format olmasın
-
               while read -r fmt; do
                 FMT_ID=$(echo "$fmt" | awk '{print $1}')
-                RES=$(echo "$fmt" | awk '{print $2}')   # 1080p, 720p...
-                CODEC=$(echo "$fmt" | awk '{print $3}') # avc1, vp9 vb.
-                BW=$(echo "$fmt" | awk '{print $4}' | tr -d 'k')
+                RES=$(echo "$fmt" | grep -oE '[0-9]+x[0-9]+' | head -n1)
+                BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
+                [ -z "$RES" ] && continue
 
-                # H.264 ve ALLOWED_RES kontrolü
-                HEIGHT=${RES%p}
-                [[ ! " ${ALLOWED_RES} " =~ " ${HEIGHT} " ]] && continue
-                [[ "$CODEC" != "avc1" ]] && continue
-                [[ ${USED_RES[$HEIGHT]} ]] && continue  # Tek çözünürlük
-
-                # URL al
                 if [ -f cookies.txt ]; then
                   URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
                 else
                   URL=$(yt-dlp --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
                 fi
+
                 [ -z "$URL" ] && continue
 
                 echo "#EXT-X-STREAM-INF:BANDWIDTH=$((BW*1000)),RESOLUTION=${RES}" >> "$FILE_NAME"
                 echo "$URL" >> "$FILE_NAME"
-
-                USED_RES[$HEIGHT]=1
               done < formats.txt
 
-              echo "$FILE_NAME güncellendi"
+              echo "✅ $FILE_NAME güncellendi"
 
               CONTENT_JSON=$(python3 -c "import json; print(json.dumps(open('$FILE_NAME','r',encoding='utf-8').read()))")
               PAYLOAD="{\"files\": {\"$FILE_NAME\": {\"content\": $CONTENT_JSON}}}"
@@ -146,17 +132,16 @@ jobs:
                 "https://api.github.com/gists/${GIST_ID}" > /dev/null
 
             else
-              echo "Yayın bulunamadı: $CHANNEL_HANDLE"
+              echo "❌ Yayın bulunamadı: $CHANNEL_HANDLE"
             fi
           }
 
           export -f update_channel
-          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P5 -I {} bash -c 'update_channel "$@"' _ {}
+          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P1 -I {} bash -c 'update_channel "$@"' _ {}
 
           [ -f cookies.txt ] && rm -f cookies.txt
-          rm -f formats.txt
 
       - name: Temizlik
         run: |
-          rm -f gist.json || true
-          echo "Temizlik tamamlandı."
+          rm -f formats.txt gist.json || true
+          echo "🧹 Temizlik tamamlandı."
