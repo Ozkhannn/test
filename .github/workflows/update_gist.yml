@@ -70,7 +70,7 @@ jobs:
           set -e
 
           # İzin verilen çözünürlükler (tek satırda, kolayca değiştirilebilir)
-          ALLOWED_RES="1080 360"
+          ALLOWED_RES="1080 720 480"
 
           update_channel() {
             LINE="$1"
@@ -95,28 +95,44 @@ jobs:
               VID_ID=$(echo "$META" | awk '{print $2}')
               echo "Yayın bulundu: $VID_ID"
 
-              # yt-dlp ile direkt H.264 ve istenilen çözünürlükleri seçiyoruz
+              # Format listesini al
               if [ -f cookies.txt ]; then
-                yt-dlp --cookies cookies.txt --no-warnings --skip-download \
-                  -f "bestvideo[vcodec^=avc][height<=1080][height>=480]+bestaudio/best[height<=1080]" \
-                  --get-url "https://www.youtube.com/watch?v=${VID_ID}" > urls.txt
+                yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" > formats.txt
               else
-                yt-dlp --no-warnings --skip-download \
-                  -f "bestvideo[vcodec^=avc][height<=1080][height>=480]+bestaudio/best[height<=1080]" \
-                  --get-url "https://www.youtube.com/watch?v=${VID_ID}" > urls.txt
+                yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" > formats.txt
               fi
 
               echo "#EXTM3U" > "$FILE_NAME"
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              # urls.txt dosyasındaki URL'leri tek tek ekle
-              while read -r URL; do
+              declare -A USED_RES  # Tek çözünürlükte birden fazla format olmasın
+
+              while read -r fmt; do
+                FMT_ID=$(echo "$fmt" | awk '{print $1}')
+                RES=$(echo "$fmt" | awk '{print $2}')   # 1080p, 720p...
+                CODEC=$(echo "$fmt" | awk '{print $3}') # avc1, vp9 vb.
+                BW=$(echo "$fmt" | awk '{print $4}' | tr -d 'k')
+
+                # H.264 ve ALLOWED_RES kontrolü
+                HEIGHT=${RES%p}
+                [[ ! " ${ALLOWED_RES} " =~ " ${HEIGHT} " ]] && continue
+                [[ "$CODEC" != "avc1" ]] && continue
+                [[ ${USED_RES[$HEIGHT]} ]] && continue  # Tek çözünürlük
+
+                # URL al
+                if [ -f cookies.txt ]; then
+                  URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
+                else
+                  URL=$(yt-dlp --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
+                fi
                 [ -z "$URL" ] && continue
-                # Çözünürlük bilgisi URL’de yoksa atıyoruz, Tivimate çoğu URL’i oynatabilir
-                echo "#EXT-X-STREAM-INF:BANDWIDTH=0,RESOLUTION=?" >> "$FILE_NAME"
+
+                echo "#EXT-X-STREAM-INF:BANDWIDTH=$((BW*1000)),RESOLUTION=${RES}" >> "$FILE_NAME"
                 echo "$URL" >> "$FILE_NAME"
-              done < urls.txt
+
+                USED_RES[$HEIGHT]=1
+              done < formats.txt
 
               echo "$FILE_NAME güncellendi"
 
@@ -135,10 +151,10 @@ jobs:
           }
 
           export -f update_channel
-          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P3 -I {} bash -c 'update_channel "$@"' _ {}
+          cat channels.txt | grep -vE '^\s*#' | xargs -n1 -P1 -I {} bash -c 'update_channel "$@"' _ {}
 
           [ -f cookies.txt ] && rm -f cookies.txt
-          rm -f urls.txt
+          rm -f formats.txt
 
       - name: Temizlik
         run: |
