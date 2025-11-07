@@ -70,7 +70,7 @@ jobs:
           set -e
 
           # İzin verilen çözünürlükler (tek satırda, kolayca değiştirilebilir)
-          ALLOWED_RES="1080 720 480"
+          ALLOWED_RES="1080 480 144"
 
           update_channel() {
             LINE="$1"
