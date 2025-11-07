@@ -108,21 +108,26 @@ jobs:
               while read -r fmt; do
                 FMT_ID=$(echo "$fmt" | awk '{print $1}')
                 RES=$(echo "$fmt" | grep -oE '[0-9]+x[0-9]+' | head -n1)
-                BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
                 [ -z "$RES" ] && continue
-
                 HEIGHT=$(echo "$RES" | cut -d'x' -f2)
-                # Sadece ALLOWED_RES içindekileri geçir
-                if ! echo "$ALLOWED_RES" | grep -qw "$HEIGHT"; then
-                  continue
-                fi
+
+                # Sadece ALLOWED_RES içindekileri geçir (tam rakam eşleşmesi)
+                MATCH=0
+                for h in $ALLOWED_RES; do
+                  if [ "$HEIGHT" -eq "$h" ]; then
+                    MATCH=1
+                    break
+                  fi
+                done
+                [ $MATCH -eq 0 ] && continue
+
+                BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
 
                 if [ -f cookies.txt ]; then
                   URL=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
                 else
                   URL=$(yt-dlp --no-warnings --skip-download -f "$FMT_ID" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | head -n1)
                 fi
-
                 [ -z "$URL" ] && continue
 
                 echo "#EXT-X-STREAM-INF:BANDWIDTH=$((BW*1000)),RESOLUTION=${RES}" >> "$FILE_NAME"
