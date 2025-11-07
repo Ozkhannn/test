@@ -82,7 +82,7 @@ jobs:
             fi
 
             # 💡 Her kanal kendi içinde rastgele gecikme (4-8 saniye)
-            sleep $((RANDOM % 5 + 4))
+            sleep $((RANDOM % 10 + 9))
 
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
             if [ -f cookies.txt ]; then
