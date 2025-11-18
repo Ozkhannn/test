@@ -82,7 +82,7 @@ jobs:
             fi
 
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
-            sleep $((RANDOM % 5 + 2))  # 2-6 saniye rastgele gecikme
+            sleep $((RANDOM % 2 + 2))  # 2-6 saniye rastgele gecikme
 
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
