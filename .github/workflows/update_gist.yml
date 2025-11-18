@@ -105,15 +105,15 @@ jobs:
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              # Python ile tüm formatları yaz (toplam bitrate + resolution)
+              # Python ile tüm formatları yaz (toplam bitrate + resolution) - mevcut here-doc stilinde
               python3 - <<EOF
 import json
 data = json.load(open('formats.json', encoding='utf-8'))
 with open('$FILE_NAME', 'a', encoding='utf-8') as f:
-    for fmt in data['formats']:
+    for fmt in data.get('formats', []):
         if 'url' not in fmt:
             continue
-        bw = fmt.get('tbr', 0)  # Toplam bitrate (audio+video)
+        bw = fmt.get('tbr', 0)
         width = fmt.get('width', 0)
         height = fmt.get('height', 0)
         f.write(f"#EXT-X-STREAM-INF:BANDWIDTH={int(bw*1000)},RESOLUTION={width}x{height}\n")
