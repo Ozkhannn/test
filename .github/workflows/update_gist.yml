@@ -82,7 +82,7 @@ jobs:
             fi
 
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
-            sleep $((RANDOM % 5 + 2))  # 2-6 saniye rastgele gecikme
+            sleep $((RANDOM % 2 + 2))  # 2-6 saniye rastgele gecikme
 
             # Temel yt-dlp seçeneklerini tanımla
             YT_DL_BASE_OPTIONS="--no-warnings --skip-download"
