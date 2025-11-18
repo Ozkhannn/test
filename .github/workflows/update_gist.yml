@@ -82,7 +82,7 @@ jobs:
             fi
 
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
-            sleep $((RANDOM % 2 + 2))  # 2-6 saniye rastgele gecikme
+            sleep $((RANDOM % 5 + 2))  # 2-6 saniye rastgele gecikme
 
             if [ -f cookies.txt ]; then
               META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
@@ -105,7 +105,7 @@ jobs:
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              # Python ile tüm formatları yaz
+              # Python ile tüm formatları yaz (toplam bitrate ve resolution)
               python3 - <<EOF
 import json
 data = json.load(open('formats.json', encoding='utf-8'))
