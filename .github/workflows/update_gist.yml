@@ -82,51 +82,38 @@ jobs:
             fi
 
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
-            sleep $((RANDOM % 5 + 2))
+            sleep $((RANDOM % 5 + 2))  # 2-6 saniye rastgele gecikme
 
+            # Temel yt-dlp seçeneklerini tanımla
+            YT_DL_BASE_OPTIONS="--no-warnings --skip-download"
             if [ -f cookies.txt ]; then
-              META=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
-            else
-              META=$(yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
+              YT_DL_BASE_OPTIONS="--cookies cookies.txt $YT_DL_BASE_OPTIONS"
             fi
+            
+            # Canlı yayın kontrolü (İLK İSTEK)
+            META=$(yt-dlp $YT_DL_BASE_OPTIONS "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
               echo "📺 Yayın bulundu: $VID_ID"
 
+              # TEK BİR İSTEK ile tüm kalite linklerini ve M3U8 metadata'sını al
+              # --print, format bilgisini metadata'dan alıp M3U8 tag'i olarak yazdırır.
+              FORMAT_LINES=$(yt-dlp \
+                $YT_DL_BASE_OPTIONS \
+                --format "bestvideo*[ext!=webm]+bestaudio/best" \
+                --print \
+                "#[%(format_note)s]EXT-X-STREAM-INF:BANDWIDTH=%(tbr)d000,RESOLUTION=%(width)sx%(height)s,NAME=\"%(format_note)s\"\n%(url)s" \
+                "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null \
+                || true
+              )
+
               echo "#EXTM3U" > "$FILE_NAME"
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              # --- KALİTE + TOTAL BITRATE + RESOLUTION BLOĞU (HATASIZ) ---
-              if [ -f cookies.txt ]; then
-                yt-dlp --cookies cookies.txt --no-warnings --skip-download -J "https://www.youtube.com/watch?v=${VID_ID}" > formats.json
-              else
-                yt-dlp --no-warnings --skip-download -J "https://www.youtube.com/watch?v=${VID_ID}" > formats.json
-              fi
-
-              FILE_NAME="$FILE_NAME" python3 <<EOF
-import json, os
-
-file = os.environ["FILE_NAME"]
-data = json.load(open("formats.json","r",encoding="utf-8"))
-
-with open(file, "a", encoding="utf-8") as out:
-    for fmt in data.get("formats", []):
-        url = fmt.get("url")
-        if not url:
-            continue
-
-        bw = fmt.get("tbr") or 0
-        width = fmt.get("width") or 0
-        height = fmt.get("height") or 0
-
-        out.write(f"#EXT-X-STREAM-INF:BANDWIDTH={int(bw*1000)},RESOLUTION={width}x{height}\n")
-        out.write(url + "\n")
-EOF
-
-              rm -f formats.json
-              # ------------------------------------------------------------
+              # Hazır M3U8 etiketlerini ve URL'leri dosyaya yaz
+              echo "$FORMAT_LINES" >> "$FILE_NAME"
 
               echo "✅ $FILE_NAME güncellendi"
 
@@ -151,5 +138,5 @@ EOF
 
       - name: Temizlik
         run: |
-          rm -f formats.json gist.json || true
+          rm -f formats.txt gist.json || true
           echo "🧹 Temizlik tamamlandı."
