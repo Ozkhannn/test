@@ -94,22 +94,31 @@ jobs:
               VID_ID=$(echo "$META" | awk '{print $2}')
               echo "📺 Yayın bulundu: $VID_ID"
 
-              # Tüm kalite linklerini tek istekte al
+              # Tüm kalite linklerini JSON ile al
               if [ -f cookies.txt ]; then
-                URL_LIST=$(yt-dlp --cookies cookies.txt --no-warnings --skip-download --all-formats --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null)
+                yt-dlp --cookies cookies.txt --no-warnings --skip-download -J "https://www.youtube.com/watch?v=${VID_ID}" > formats.json
               else
-                URL_LIST=$(yt-dlp --no-warnings --skip-download --all-formats --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null)
+                yt-dlp --no-warnings --skip-download -J "https://www.youtube.com/watch?v=${VID_ID}" > formats.json
               fi
 
               echo "#EXTM3U" > "$FILE_NAME"
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              # Tüm linkleri yaz
-              for URL in $URL_LIST; do
-                echo "#EXT-X-STREAM-INF:BANDWIDTH=0" >> "$FILE_NAME"
-                echo "$URL" >> "$FILE_NAME"
-              done
+              # Python ile tüm formatları yaz
+              python3 - <<EOF
+import json
+data = json.load(open('formats.json', encoding='utf-8'))
+with open('$FILE_NAME', 'a', encoding='utf-8') as f:
+    for fmt in data['formats']:
+        if 'url' not in fmt:
+            continue
+        bw = fmt.get('tbr', 0)  # Toplam bitrate
+        width = fmt.get('width', 0)
+        height = fmt.get('height', 0)
+        f.write(f"#EXT-X-STREAM-INF:BANDWIDTH={int(bw*1000)},RESOLUTION={width}x{height}\n")
+        f.write(fmt['url'] + "\n")
+EOF
 
               echo "✅ $FILE_NAME güncellendi"
 
@@ -125,6 +134,8 @@ jobs:
             else
               echo "❌ Yayın bulunamadı: $CHANNEL_HANDLE"
             fi
+
+            [ -f formats.json ] && rm -f formats.json
           }
 
           export -f update_channel
@@ -134,5 +145,5 @@ jobs:
 
       - name: Temizlik
         run: |
-          rm -f formats.txt gist.json || true
+          rm -f formats.json gist.json || true
           echo "🧹 Temizlik tamamlandı."
