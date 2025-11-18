@@ -14,6 +14,6 @@ UCVy8p_-CFrIRJ55wxV5F2gw,kidstv.m3u8
 UCovav2A4vB5HWORzgB7YC_Q,kamyonleom3u8
 @mutlucocuk,mutlucocuk.m3u8
 @cartoonnetworkturkiye,cartoonnetwork.m3u8
-UCq8KR1lnewd5ZPx9_XKoubg,johnyfamilyshow.m3u8
+@johnyfamilyshow,johnyfamilyshow.m3u8
 @animalshomemonkey,animalshomemonkey.m3u8
-UCdlEXiVLTEvA280oyMvr8Kw,guldurguldur.m3u8
+@guldurguldurtv,guldurguldur.m3u8
