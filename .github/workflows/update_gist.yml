@@ -105,11 +105,41 @@ jobs:
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              # Tüm linkleri yaz
-              for URL in $URL_LIST; do
-                echo "#EXT-X-STREAM-INF:BANDWIDTH=0" >> "$FILE_NAME"
-                echo "$URL" >> "$FILE_NAME"
-              done
+              # JSON ile tüm formatları al
+              if [ -f cookies.txt ]; then
+                yt-dlp --cookies cookies.txt --no-warnings --skip-download -J "https://www.youtube.com/watch?v=${VID_ID}" > formats.json
+              else
+                yt-dlp --no-warnings --skip-download -J "https://www.youtube.com/watch?v=${VID_ID}" > formats.json
+              fi
+
+              echo "#EXTM3U" > "$FILE_NAME"
+              echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
+              echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
+
+              # Python here-doc içinde bitrate ve çözünürlük hesaplama
+               python3 << 'EOF'
+               import json
+
+               data = json.load(open("formats.json", encoding="utf-8"))
+               out = open("$FILE_NAME", "a", encoding="utf-8")
+
+              for fmt in data.get("formats", []):
+              url = fmt.get("url")
+             if not url:
+              continue
+
+    # toplam bitrate (tbr varsa onu al, yoksa abr)
+    bw = fmt.get("tbr") or fmt.get("abr") or 0
+    width = fmt.get("width") or 0
+    height = fmt.get("height") or 0
+
+    out.write(f"#EXT-X-STREAM-INF:BANDWIDTH={int(bw*1000)},RESOLUTION={width}x{height}\n")
+    out.write(url + "\n")
+
+              out.close()
+               EOF
+
+               rm -f formats.json
 
               echo "✅ $FILE_NAME güncellendi"
 
