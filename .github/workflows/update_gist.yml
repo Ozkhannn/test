@@ -62,7 +62,7 @@ jobs:
           curl -s -H "Authorization: token ${GIST_TOKEN}" \
             https://api.github.com/gists/${GIST_ID} > gist.json
 
-      - name: Update each channel as separate .m3u8
+      - name: Update each channel as single .m3u8
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -82,38 +82,36 @@ jobs:
             fi
 
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
-            sleep $((RANDOM % 2 + 2))  # 2-6 saniye rastgele gecikme
+            sleep $((RANDOM % 5 + 2))
 
-            # Temel yt-dlp seçeneklerini tanımla
-            YT_DL_BASE_OPTIONS="--no-warnings --skip-download"
-            if [ -f cookies.txt ]; then
-              YT_DL_BASE_OPTIONS="--cookies cookies.txt $YT_DL_BASE_OPTIONS"
-            fi
-            
-            # Canlı yayın kontrolü (İLK İSTEK)
-            META=$(yt-dlp $YT_DL_BASE_OPTIONS "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || true)
+            META=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null )
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
               echo "📺 Yayın bulundu: $VID_ID"
 
-              # TEK BİR İSTEK ile tüm kalite linklerini ve M3U8 metadata'sını al
-              # --print, format bilgisini metadata'dan alıp M3U8 tag'i olarak yazdırır.
-              FORMAT_LINES=$(yt-dlp \
-                $YT_DL_BASE_OPTIONS \
-                --format "bestvideo*[ext!=webm]+bestaudio/best" \
-                --print \
-                "#[%(format_note)s]EXT-X-STREAM-INF:BANDWIDTH=%(tbr)d000,RESOLUTION=%(width)sx%(height)s,NAME=\"%(format_note)s\"\n%(url)s" \
-                "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null \
-                || true
-              )
+              # Tüm formatları tek istekte al
+              FORMATS=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' || yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' )
+
+              # URL'leri tek seferde al
+              URLS=$(echo "$FORMATS" | awk '{print $1}' | tr '\n' ',' | sed 's/,$//')
+              URL_LIST=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$URLS" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null || yt-dlp --no-warnings --skip-download -f "$URLS" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null )
 
               echo "#EXTM3U" > "$FILE_NAME"
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
               echo "# Otomatik oluşturulma: $(date '+%Y-%m-%d %H:%M:%S')" >> "$FILE_NAME"
 
-              # Hazır M3U8 etiketlerini ve URL'leri dosyaya yaz
-              echo "$FORMAT_LINES" >> "$FILE_NAME"
+              i=1
+              while read -r fmt; do
+                FMT_ID=$(echo "$fmt" | awk '{print $1}')
+                RES=$(echo "$fmt" | grep -oE '[0-9]+x[0-9]+' | head -n1)
+                BW=$(echo "$fmt" | grep -oE '[0-9]+k' | head -n1 | tr -d 'k')
+                URL=$(echo "$URL_LIST" | sed -n "${i}p")
+                [ -z "$URL" ] && continue
+                echo "#EXT-X-STREAM-INF:BANDWIDTH=$((BW*1000)),RESOLUTION=${RES}" >> "$FILE_NAME"
+                echo "$URL" >> "$FILE_NAME"
+                i=$((i+1))
+              done <<< "$FORMATS"
 
               echo "✅ $FILE_NAME güncellendi"
 
