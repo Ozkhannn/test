@@ -84,7 +84,7 @@ jobs:
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
             sleep $((RANDOM % 2 + 2))
 
-            META=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null )
+            META=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt -J "$YT_URL" 2>/dev/null | jq -r '[.is_live, .id] | @tsv' || yt-dlp -J "$YT_URL" 2>/dev/null | jq -r '[.is_live, .id] | @tsv' )
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
