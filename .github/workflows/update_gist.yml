@@ -30,7 +30,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: pip install --upgrade yt-dlp requests
+        run: pip install --no-cache-dir --upgrade yt-dlp requests
 
       - name: Prepare cookies (Netscape format)
         env:
