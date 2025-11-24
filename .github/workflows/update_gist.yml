@@ -30,7 +30,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: pip install --no-cache-dir --upgrade yt-dlp requests
+        run: pip install --upgrade yt-dlp requests
 
       - name: Prepare cookies (Netscape format)
         env:
@@ -84,7 +84,7 @@ jobs:
             echo "🔍 $CHANNEL_HANDLE kontrol ediliyor..."
             sleep $((RANDOM % 2 + 2))
 
-            META=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt -J "https://www.youtube.com/${CHANNEL_HANDLE}" 2>/dev/null | jq -r '.entries[] | select(.is_live==true) | [.is_live, .id] | @tsv' || yt-dlp -J "https://www.youtube.com/${CHANNEL_HANDLE}" 2>/dev/null | jq -r '.entries[] | select(.is_live==true) | [.is_live, .id] | @tsv' )
+            META=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null || yt-dlp --no-warnings --skip-download "$YT_URL" --print "%(is_live)s %(id)s" 2>/dev/null )
 
             if echo "$META" | grep -q "True"; then
               VID_ID=$(echo "$META" | awk '{print $2}')
