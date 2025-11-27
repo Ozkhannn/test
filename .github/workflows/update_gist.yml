@@ -95,7 +95,7 @@ jobs:
 
               # URL'leri tek seferde al
               URLS=$(echo "$FORMATS" | awk '{print $1}' | tr '\n' ',' | sed 's/,$//')
-              URL_LIST=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download -f "$URLS" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null || yt-dlp --no-warnings --skip-download -f "$URLS" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null )
+              URL_LIST=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download --throttled-rate 0 -f "$URLS" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null || yt-dlp --no-warnings --skip-download -f "$URLS" --get-url "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null )
 
               echo "#EXTM3U" > "$FILE_NAME"
               echo "# Kanal: $CHANNEL_HANDLE" >> "$FILE_NAME"
