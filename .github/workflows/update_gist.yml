@@ -91,7 +91,7 @@ jobs:
               echo "📺 Yayın bulundu: $VID_ID"
 
               # Tüm formatları tek istekte al
-              FORMATS=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' || yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' )
+              FORMATS=$( [ -f cookies.txt ] && yt-dlp --cookies cookies.txt --no-warnings --skip-download --throttled-rate 0 -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' || yt-dlp --no-warnings --skip-download -F "https://www.youtube.com/watch?v=${VID_ID}" 2>/dev/null | grep '^[0-9]' )
 
               # URL'leri tek seferde al
               URLS=$(echo "$FORMATS" | awk '{print $1}' | tr '\n' ',' | sed 's/,$//')
