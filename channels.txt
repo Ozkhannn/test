@@ -17,4 +17,4 @@ UCovav2A4vB5HWORzgB7YC_Q,kamyonleo.m3u8
 @johnyfamilyshow,johnyfamilyshow.m3u8
 @animalshomemonkey,animalshomemonkey.m3u8
 @guldurguldurtv,guldurguldur.m3u8
-@KrslSakirResmi,kralsakir.m3u8
+@KralSakirResmi,kralsakir.m3u8
