@@ -2,8 +2,8 @@ name: KekikStream Filtreli M3U
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Her 6 saatte bir otomatik güncelleme
-  workflow_dispatch: # Manuel çalıştırma butonu
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   run-scraper:
