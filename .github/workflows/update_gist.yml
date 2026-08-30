@@ -2,8 +2,8 @@ name: KekikStream Filtreli M3U
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Her 6 saatte bir otomatik çalışır
-  workflow_dispatch: # Manuel çalıştırma butonu ekler
+    - cron: '0 */6 * * *' # Her 6 saatte bir otomatik güncelleme
+  workflow_dispatch: # Manuel çalıştırma butonu
 
 jobs:
   run-scraper:
@@ -18,7 +18,7 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Kütüphaneleri Yükle
+    - name: Bağımlılıkları Kur (GitHub Kaynaklı)
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
@@ -28,7 +28,7 @@ jobs:
 
     - name: Değişiklikleri Repoya Kaydet
       run: |
-        git config --local user.email "github-actions[bot]@://github.com"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         git add config.txt rastgele_filmler.m3u
         git commit -m "M3U Listesi ve Config Güncellendi" || exit 0
