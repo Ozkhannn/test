@@ -1,7 +1,27 @@
 import os
 import re
+import sys
+import subprocess
+
+# --- OTOMATİK BAĞIMLILIK YÜKLEYİCİ ---
+try:
+    from KekikStream import KekikStream
+except ImportError:
+    print("[*] KekikStream kütüphanesi bulunamadı. Doğrudan kaynak koddan yükleniyor...")
+    try:
+        # Terminal uyuşmazlıklarını aşmak için pip yüklemesini Python alt süreciyle güvenle tetikliyoruz
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", 
+            "git+https://github.com"
+        ])
+        from KekikStream import KekikStream
+        print("[+] KekikStream başarıyla kuruldu ve içe aktarıldı.")
+    except Exception as e:
+        print(f"[Hata] Kütüphane yüklenirken kritik bir sorun oluştu: {e}")
+        sys.exit(1)
+# -------------------------------------
+
 import random
-from KekikStream import KekikStream
 
 CONFIG_FILE = "config.txt"
 M3U_FILE = "rastgele_filmler.m3u"
