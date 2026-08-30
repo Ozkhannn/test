@@ -3,23 +3,23 @@ import re
 import sys
 import subprocess
 
-# --- OTOMATİK BAĞIMLILIK YÜKLEYİCİ ---
+# --- GÜVENLİ VE ZİP TABANLI OTOMATİK BAĞIMLILIK YÜKLEYİCİ ---
 try:
     from KekikStream import KekikStream
 except ImportError:
-    print("[*] KekikStream kütüphanesi bulunamadı. Doğrudan kaynak koddan yükleniyor...")
+    print("[*] KekikStream bulunamadı. Zip arşivi üzerinden doğrudan yükleniyor...")
     try:
-        # Terminal uyuşmazlıklarını aşmak için pip yüklemesini Python alt süreciyle güvenle tetikliyoruz
+        # Git katmanını tamamen devre dışı bırakıp doğrudan indirme yapıyoruz
+        zip_url = "https://github.com"
         subprocess.check_call([
-            sys.executable, "-m", "pip", "install", 
-            "git+https://github.com"
+            sys.executable, "-m", "pip", "install", zip_url
         ])
         from KekikStream import KekikStream
         print("[+] KekikStream başarıyla kuruldu ve içe aktarıldı.")
     except Exception as e:
-        print(f"[Hata] Kütüphane yüklenirken kritik bir sorun oluştu: {e}")
+        print(f"[Hata] Kritik yükleme hatası: {e}")
         sys.exit(1)
-# -------------------------------------
+# -----------------------------------------------------------
 
 import random
 
